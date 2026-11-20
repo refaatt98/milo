@@ -17,6 +17,7 @@ import {
   Redo2,
   Ruler,
   Smile,
+  ImagePlus,
   Square,
   Trash2,
   Type,
@@ -38,9 +39,9 @@ import { STICKERS, STICKER_IDS } from '../components/notes/stickers'
 import { Button } from '../components/ui/Button'
 import { Confirm } from '../components/ui/Confirm'
 import { db, type Notebook, type NotePage, type PageContent, type PaperKind, type PenKind } from '../lib/db'
-import { INK_COLORS, PAGE_H, PAGE_W, PAPERS, PAPER_COLORS, PENS } from '../lib/ink'
+import { INK_COLORS, PAGE_H, PAGE_W, PAPERS, PAPER_COLORS, PENS, r1 } from '../lib/ink'
 import { renderPage, exportNotebookPdf } from '../lib/render'
-import { insertFile } from '../lib/pdf'
+import { insertFile, storePageImage } from '../lib/pdf'
 import { LANGS, translate } from '../lib/translate'
 import { addPage, clipUrl, deletePage, readContent, removeClip, saveClip, unlockNotebook, writeContent } from '../lib/notes'
 import { unlockedKeys } from '../lib/crypto'
@@ -134,6 +135,8 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   })
   useEffect(() => localStorage.setItem(TOOLS_KEY, JSON.stringify(tools)), [tools])
   const [content, setContent] = useState<PageContent | null>(null)
+  const contentRef = useRef<PageContent | null>(null)
+  contentRef.current = content
   const [selected, setSelected] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [reading, setReading] = useState(false)
@@ -259,6 +262,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   const [busyMsg, setBusyMsg] = useState<string | null>(null)
   const [fileErr, setFileErr] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const imageInput = useRef<HTMLInputElement>(null)
 
   const exportPdf = async () => {
     await flush()
@@ -271,6 +275,56 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
       setBusyMsg(null)
     }
   }
+
+  /** Places photos on the current page (centred in view, or where they were dropped). PDFs become pages. */
+  const addFiles = async (files: File[], at?: { x: number; y: number }) => {
+    if (!session) return
+    const pdfs = files.filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name))
+    const imgs = files.filter((f) => f.type.startsWith('image/'))
+    if (!pdfs.length && !imgs.length) return setFileErr('بس صور أو ملفات PDF.')
+    setFileErr(null)
+    try {
+      if (imgs.length) {
+        setBusyMsg(imgs.length > 1 ? `عم نضيف ${imgs.length} صور…` : 'عم نضيف الصورة…')
+        const added = []
+        const viewTop = ((scroller.current?.scrollTop ?? 0) / pageW) * PAGE_W
+        for (const [i, f] of imgs.entries()) {
+          const { fileId, ratio } = await storePageImage(f, nb.id, session.user.id)
+          let w = 560
+          if (w * ratio > 760) w = 760 / ratio
+          const h = w * ratio
+          const cx = at ? at.x : PAGE_W / 2
+          const cy = at ? at.y : Math.min(PAGE_H - h / 2 - 20, viewTop + 120 + h / 2)
+          added.push({ id: uid(), fileId, ratio, w: r1(w), x: r1(cx - w / 2 + i * 30), y: r1(Math.max(10, cy - h / 2 + i * 30)), r: 0 })
+        }
+        const cur = contentRef.current
+        if (cur) {
+          change({ ...cur, images: [...(cur.images ?? []), ...added] })
+          setTools((t) => ({ ...t, tool: 'hand' }))
+          setSelected(added[added.length - 1].id)
+        }
+      }
+      for (const f of pdfs) await insert(f)
+    } catch (e) {
+      setFileErr((e as Error).message)
+    } finally {
+      setBusyMsg(null)
+    }
+  }
+
+  // paste a screenshot / copied photo straight onto the page
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT') return
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+      if (!files.length) return
+      e.preventDefault()
+      void addFiles(files)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  })
 
   const insert = async (file: File) => {
     if (!session) return
@@ -328,6 +382,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
           <IconButton label="نص" active={tools.tool === 'text'} onClick={() => setTool({ tool: 'text' })}><Type size={19} /></IconButton>
           <IconButton label="تحريك وتحديد" active={tools.tool === 'hand'} onClick={() => setTool({ tool: 'hand' })}><Hand size={19} /></IconButton>
           <IconButton label="ترجمة" active={panel === 'translate'} onClick={() => setPanel(panel === 'translate' ? null : 'translate')}><Languages size={19} /></IconButton>
+          <IconButton label="صورة" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></IconButton>
           <IconButton label="ملصقات" active={panel === 'stickers'} onClick={() => setPanel(panel === 'stickers' ? null : 'stickers')}><Smile size={19} /></IconButton>
           <Divider />
           <IconButton label="المسطرة" active={tools.ruler} onClick={() => setTool({ ruler: !tools.ruler })}><Ruler size={19} /></IconButton>
@@ -440,13 +495,25 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
       <div ref={(el) => { wrapRef.current = el; scroller.current = el }} className="relative flex-1 overflow-auto" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
         <div className="flex min-h-full justify-center px-3 py-5" style={{ minWidth: pageW + 24 }}>
           {content && page ? (
-            <PageCanvas content={content} paper={paper} paperColor={nb.paperColor} bg={page.bg} width={pageW} tools={tools} onChange={change} selected={selected} onSelect={setSelected} />
+            <PageCanvas content={content} paper={paper} paperColor={nb.paperColor} bg={page.bg} width={pageW} tools={tools} onChange={change} selected={selected} onSelect={setSelected} onDropFiles={(files, at) => void addFiles(files, at)} />
           ) : (
             <div className="animate-pulse rounded-md bg-white" style={{ width: pageW, height: (pageW * PAGE_H) / PAGE_W }} />
           )}
         </div>
       </div>
 
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])]
+          e.target.value = ''
+          if (files.length) void addFiles(files)
+        }}
+      />
       <input
         ref={fileInput}
         type="file"

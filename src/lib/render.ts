@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { Notebook, NotePage, PageContent, PaperKind, TextBox } from './db'
 import { PAGE_H, PAGE_W, drawAll, drawPaper } from './ink'
 import { STICKERS } from '../components/notes/stickers'
-import { containRect, drawBg, pdfBytes, renderBg } from './pdf'
+import { containRect, drawBg, getFileBlob, pdfBytes, renderBg } from './pdf'
 import { readContent } from './notes'
 
 const stickerImgs = new Map<string, Promise<HTMLImageElement | null>>()
@@ -84,6 +84,20 @@ export async function renderPage(
       if (img) drawBg(ctx, img)
     }
   }
+  // photos placed on the page (under the ink, like on screen)
+  for (const m of content.images ?? []) {
+    const blob = await getFileBlob(m.fileId)
+    if (!blob) continue
+    const bmp = await createImageBitmap(blob).catch(() => null)
+    if (!bmp) continue
+    const h = m.w * m.ratio
+    ctx.save()
+    ctx.translate(m.x + m.w / 2, m.y + h / 2)
+    ctx.rotate((m.r * Math.PI) / 180)
+    ctx.drawImage(bmp, -m.w / 2, -h / 2, m.w, h)
+    ctx.restore()
+    bmp.close()
+  }
   for (const st of content.stickers) {
     const img = await stickerImage(st.kind)
     if (!img) continue
@@ -125,7 +139,7 @@ export async function exportNotebookPdf(nb: Notebook, pages: NotePage[], onProgr
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i]
     const content = (await readContent(nb, p)) ?? { strokes: [], texts: [], stickers: [] }
-    const hasInk = content.strokes.length + content.texts.length + content.stickers.length > 0
+    const hasInk = content.strokes.length + content.texts.length + content.stickers.length + (content.images?.length ?? 0) > 0
     if (p.bg?.kind === 'pdf') {
       if (!sources.has(p.bg.fileId)) {
         const bytes = await pdfBytes(p.bg.fileId)

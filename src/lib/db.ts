@@ -185,10 +185,23 @@ export interface StickerEl {
   r: number
 }
 
+/** A photo placed on the page (below the ink, so you can write over it). */
+export interface ImageEl {
+  id: string
+  fileId: string
+  x: number
+  y: number
+  w: number
+  /** height / width */
+  ratio: number
+  r: number
+}
+
 export interface PageContent {
   strokes: Stroke[]
   texts: TextBox[]
   stickers: StickerEl[]
+  images?: ImageEl[]
 }
 
 export interface Notebook {

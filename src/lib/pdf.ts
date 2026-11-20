@@ -119,7 +119,7 @@ export function drawBg(ctx: CanvasRenderingContext2D, img: CanvasImageSource) {
 
 /* ---------- import ---------- */
 
-async function storeFile(file: File, notebookId: string, userId: string, pageCount?: number): Promise<FileMeta> {
+export async function storeFile(file: File, notebookId: string, userId: string, pageCount?: number): Promise<FileMeta> {
   const id = uid()
   const mime = file.type || 'application/pdf'
   const ext = (file.name.split('.').pop() || (mime === 'application/pdf' ? 'pdf' : 'bin')).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
@@ -238,4 +238,35 @@ export async function removeNotebookFiles(notebookId: string) {
 export async function pdfBytes(fileId: string) {
   const b = await getFileBlob(fileId)
   return b ? new Uint8Array(await b.arrayBuffer()) : null
+}
+
+/* ---------- photos placed on a page ---------- */
+
+/** Shrinks big photos (phones take 4000px+) so pages stay light, then stores the file. */
+export async function storePageImage(file: File, notebookId: string, userId: string) {
+  checkSize(file)
+  if (!file.type.startsWith('image/')) throw new Error('هاد مش ملف صورة.')
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    throw new Error('ما قدرنا نفتح الصورة. جرّب صيغة JPG أو PNG.')
+  }
+  const MAX = 2000
+  const k = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height))
+  const w = Math.max(1, Math.round(bitmap.width * k))
+  const h = Math.max(1, Math.round(bitmap.height * k))
+  let out: File = file
+  const keepPng = file.type === 'image/png' && file.size < 1.5 * 1024 * 1024 // screenshots/diagrams with transparency
+  if (k < 1 || (!keepPng && file.size > 1.5 * 1024 * 1024) || file.type === 'image/heic') {
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    c.getContext('2d')!.drawImage(bitmap, 0, 0, w, h)
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', 0.86))
+    if (blob) out = new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' })
+  }
+  bitmap.close()
+  const meta = await storeFile(out, notebookId, userId)
+  return { fileId: meta.id, ratio: h / w }
 }
