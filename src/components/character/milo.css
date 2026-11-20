@@ -1,0 +1,265 @@
+.milo * {
+  transform-box: fill-box;
+}
+.milo-breathe {
+  transform-origin: 50% 100%;
+  animation: milo-breathe 3.8s ease-in-out infinite;
+}
+.milo-calm {
+  transform-origin: 50% 100%;
+  animation: milo-breathe 5.6s ease-in-out infinite;
+}
+@keyframes milo-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.012, 1.03);
+  }
+}
+.milo-blink {
+  transform-origin: 50% 55%;
+  animation: milo-blink 5.2s infinite;
+}
+.milo-blink:nth-child(2) {
+  animation-delay: 0.04s;
+}
+@keyframes milo-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.08);
+  }
+  96% {
+    transform: scaleY(1);
+  }
+}
+.milo-look {
+  animation: milo-look 11s ease-in-out infinite;
+}
+@keyframes milo-look {
+  0%,
+  30%,
+  100% {
+    transform: translate(0, 0);
+  }
+  36%,
+  52% {
+    transform: translate(-3.5px, -1px);
+  }
+  60%,
+  76% {
+    transform: translate(3px, 0.5px);
+  }
+}
+.milo-sprout {
+  transform-origin: 50% 100%;
+  animation: milo-sprout 4.4s ease-in-out infinite;
+}
+@keyframes milo-sprout {
+  0%,
+  100% {
+    rotate: -5deg;
+  }
+  50% {
+    rotate: 6deg;
+  }
+}
+.milo-bounce {
+  transform-origin: 50% 100%;
+  animation: milo-bounce 0.95s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+@keyframes milo-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+  15% {
+    transform: translateY(0) scale(1, 1);
+  }
+  45% {
+    transform: translateY(-22px) scale(0.97, 1.04);
+  }
+  75% {
+    transform: translateY(0) scale(1.04, 0.96);
+  }
+}
+.milo-shadow {
+  transform-origin: 50% 50%;
+  animation: milo-shadow 0.95s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+@keyframes milo-shadow {
+  0%,
+  100%,
+  75% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(0.7);
+    opacity: 0.05;
+  }
+}
+.milo-wiggle {
+  transform-origin: 50% 100%;
+  animation: milo-wiggle 1.3s ease-in-out infinite;
+}
+@keyframes milo-wiggle {
+  0%,
+  100% {
+    rotate: -3deg;
+  }
+  50% {
+    rotate: 3deg;
+  }
+}
+.milo-sway {
+  transform-origin: 50% 100%;
+  animation: milo-sway 5s ease-in-out infinite;
+}
+@keyframes milo-sway {
+  0%,
+  100% {
+    rotate: -2.5deg;
+    transform: scale(1, 1);
+  }
+  50% {
+    rotate: 2deg;
+    transform: scale(1.01, 0.985);
+  }
+}
+.milo-wave {
+  transform-origin: 0% 100%;
+  animation: milo-wave 1.6s ease-in-out infinite;
+}
+@keyframes milo-wave {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  25% {
+    rotate: -14deg;
+  }
+  50% {
+    rotate: 4deg;
+  }
+  75% {
+    rotate: -10deg;
+  }
+}
+.milo-cheer-l,
+.milo-cheer-r {
+  animation: milo-cheer 0.95s ease-in-out infinite;
+}
+.milo-cheer-l {
+  transform-origin: 100% 100%;
+}
+.milo-cheer-r {
+  transform-origin: 0% 100%;
+  animation-direction: reverse;
+}
+@keyframes milo-cheer {
+  0%,
+  100% {
+    rotate: -8deg;
+  }
+  50% {
+    rotate: 8deg;
+  }
+}
+.milo-twinkle {
+  transform-origin: 50% 50%;
+  animation: milo-twinkle 1.8s ease-in-out infinite;
+}
+@keyframes milo-twinkle {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.1) rotate(20deg);
+    opacity: 1;
+  }
+}
+.milo-z {
+  animation: milo-z 2.7s ease-in infinite;
+  opacity: 0;
+}
+@keyframes milo-z {
+  0% {
+    opacity: 0;
+    transform: translate(0, 6px);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(8px, -14px);
+  }
+}
+.milo-steam path {
+  stroke-dasharray: 22;
+  animation: milo-steam 2.6s linear infinite;
+}
+.milo-steam path:nth-child(2) {
+  animation-delay: 1.3s;
+}
+@keyframes milo-steam {
+  0% {
+    stroke-dashoffset: 22;
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    stroke-dashoffset: -22;
+    opacity: 0;
+  }
+}
+.milo-page {
+  transform-origin: 0% 50%;
+  animation: milo-page 6s ease-in-out infinite;
+}
+@keyframes milo-page {
+  0%,
+  80%,
+  100% {
+    transform: scaleX(1);
+  }
+  88% {
+    transform: scaleX(-0.2);
+  }
+}
+.milo-yawn {
+  transform-origin: 50% 50%;
+  animation: milo-yawn 5s ease-in-out infinite;
+}
+@keyframes milo-yawn {
+  0%,
+  70%,
+  100% {
+    transform: scale(1);
+  }
+  80% {
+    transform: scale(1.4, 1.7);
+  }
+}
+.milo-still *,
+.milo-still {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .milo *,
+  .milo {
+    animation: none !important;
+  }
+  .milo-z {
+    opacity: 1;
+  }
+}

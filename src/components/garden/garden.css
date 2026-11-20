@@ -1,0 +1,75 @@
+.plant-sway {
+  transform-box: view-box;
+  animation: plant-sway 5.5s ease-in-out infinite;
+}
+@keyframes plant-sway {
+  0%,
+  100% {
+    rotate: -1.6deg;
+  }
+  50% {
+    rotate: 1.8deg;
+  }
+}
+.plant-spin {
+  transform-box: view-box;
+  animation: plant-spin 30s linear infinite;
+}
+@keyframes plant-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+.garden-cloud {
+  animation: garden-cloud 26s ease-in-out infinite alternate;
+}
+.garden-cloud-2 {
+  animation-duration: 34s;
+  animation-direction: alternate-reverse;
+}
+@keyframes garden-cloud {
+  from {
+    transform: translateX(-14px);
+  }
+  to {
+    transform: translateX(22px);
+  }
+}
+.map-smoke {
+  stroke-dasharray: 16;
+  animation: map-steam 3s linear infinite;
+}
+@keyframes map-steam {
+  0% {
+    stroke-dashoffset: 16;
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    stroke-dashoffset: -16;
+    opacity: 0;
+  }
+}
+.map-pulse {
+  animation: map-pulse 2.4s ease-in-out infinite;
+}
+@keyframes map-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(111, 152, 118, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(111, 152, 118, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plant-sway,
+  .plant-spin,
+  .garden-cloud,
+  .map-smoke,
+  .map-pulse {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,215 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-paper: #faf9f6;
+  --color-ink: #27372f;
+  --color-ink-soft: #55665c;
+  --color-ink-faint: #8a978f;
+  --color-sage: #6f9876;
+  --color-sage-deep: #557c5d;
+  --color-mint: #e4eedc;
+  --color-butter: #f9e9a7;
+  --color-peach: #f8d9c6;
+  --color-lavender: #eae3f6;
+  --color-sky: #dceef4;
+  --color-line: #e7e3d8;
+
+  --font-display: 'Baloo Bhaijaan 2', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans Arabic', system-ui, -apple-system, sans-serif;
+  --font-num: 'Fraunces', Georgia, serif;
+
+  --radius-blob: 28px 22px 30px 24px;
+}
+
+:root {
+  color-scheme: light;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@layer base {
+html {
+  background: #faf9f6;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  background-color: #faf9f6;
+  background-image: url('../assets/paper-grain.svg');
+  background-size: 240px 240px;
+  color: #27372f;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  line-height: 1.25;
+}
+
+.num {
+  font-family: var(--font-num);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'lnum', 'tnum';
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+:focus-visible {
+  outline: 2.5px solid #6f9876;
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+}
+
+@layer components {
+/* Notebook card: a sheet of paper with a soft, slightly uneven edge */
+.sheet {
+  background: #fff;
+  border: 1.5px solid #e7e3d8;
+  border-radius: 26px 22px 28px 20px;
+  box-shadow:
+    0 1px 0 #efeadf,
+    0 12px 30px -18px rgba(39, 55, 47, 0.25);
+}
+.sheet-tilt-l {
+  rotate: -0.4deg;
+}
+.sheet-tilt-r {
+  rotate: 0.4deg;
+}
+
+.ruled {
+  background-image: repeating-linear-gradient(to bottom, transparent 0 39px, #eef0e6 39px 40px);
+}
+
+.dotgrid {
+  background-image: radial-gradient(#e3dfd2 1.1px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+
+/* washi tape strip */
+.tape {
+  position: absolute;
+  width: 74px;
+  height: 22px;
+  background: repeating-linear-gradient(45deg, rgba(249, 233, 167, 0.85) 0 6px, rgba(249, 233, 167, 0.6) 6px 12px);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(39, 55, 47, 0.08);
+}
+.tape-peach {
+  background: repeating-linear-gradient(-45deg, rgba(248, 217, 198, 0.9) 0 6px, rgba(248, 217, 198, 0.65) 6px 12px);
+}
+.tape-lav {
+  background: repeating-linear-gradient(45deg, rgba(234, 227, 246, 0.95) 0 6px, rgba(234, 227, 246, 0.7) 6px 12px);
+}
+
+.squiggle-under {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8' viewBox='0 0 40 8'%3E%3Cpath d='M0 4 Q5 0 10 4 T20 4 T30 4 T40 4' fill='none' stroke='%236F9876' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  background-size: 20px 6px;
+  padding-bottom: 6px;
+}
+
+.btn-press {
+  transition:
+    transform 0.15s cubic-bezier(0.3, 0.7, 0.4, 1.4),
+    box-shadow 0.15s ease,
+    background-color 0.2s ease;
+}
+.btn-press:active {
+  transform: translateY(2px) scale(0.98);
+}
+
+.pt-safe {
+  padding-top: max(var(--safe-top), 12px);
+}
+.pb-nav {
+  padding-bottom: calc(110px + var(--safe-bottom));
+}
+@media (min-width: 1024px) {
+  .pb-nav {
+    padding-bottom: 48px;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.field {
+  width: 100%;
+  background: #faf9f6;
+  border: 1.5px solid #e7e3d8;
+  border-radius: 14px;
+  padding: 10px 14px;
+  min-height: 46px;
+  transition: border-color 0.2s;
+}
+.field:focus {
+  outline: none;
+  border-color: #6f9876;
+  background: #fff;
+}
+
+/* custom hand-drawn checkbox */
+.check-draw path {
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  transition: stroke-dashoffset 0.35s cubic-bezier(0.6, 0, 0.3, 1);
+}
+.check-draw[data-on='true'] path {
+  stroke-dashoffset: 0;
+}
+
+.strike {
+  background-image: linear-gradient(#6f9876, #6f9876);
+  background-repeat: no-repeat;
+  background-position: 100% 55%;
+  background-size: 0% 2px;
+  transition: background-size 0.4s ease, color 0.3s;
+}
+.strike[data-on='true'] {
+  background-size: 100% 2px;
+  color: #8a978f;
+}
+
+.recharts-surface:focus,
+.recharts-wrapper:focus,
+.recharts-sector:focus {
+  outline: none;
+}
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
