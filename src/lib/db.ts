@@ -205,10 +205,31 @@ export interface Notebook {
   lock?: { salt: string; check: string; iv: string }
 }
 
+/** What a page is drawn on top of: a page of an imported PDF, or a photo. */
+export type PageBg = { kind: 'pdf'; fileId: string; page: number } | { kind: 'image'; fileId: string }
+
+/** Imported file (PDF / image). Metadata syncs; the bytes live in Storage + a local cache. */
+export interface FileMeta {
+  id: string
+  notebookId: string
+  name: string
+  mime: string
+  size: number
+  pageCount?: number
+  createdAt: number
+  path?: string // storage path once uploaded
+}
+
+export interface FileBlob {
+  id: string
+  blob: Blob
+}
+
 export interface NotePage {
   id: string
   notebookId: string
   order: number
+  bg?: PageBg
   paper?: PaperKind
   content?: PageContent
   /** when the notebook is locked the content is stored only encrypted */
@@ -247,6 +268,8 @@ export class MiloDB extends Dexie {
   pages!: EntityTable<NotePage, 'id'>
   audio!: EntityTable<AudioClip, 'id'>
   audioBlobs!: EntityTable<AudioBlob, 'id'>
+  files!: EntityTable<FileMeta, 'id'>
+  fileBlobs!: EntityTable<FileBlob, 'id'>
 
   constructor(name: string) {
     super(name)
@@ -267,6 +290,10 @@ export class MiloDB extends Dexie {
       pages: 'id, notebookId, order',
       audio: 'id, notebookId, pageId, createdAt',
       audioBlobs: 'id',
+    })
+    this.version(3).stores({
+      files: 'id, notebookId, createdAt',
+      fileBlobs: 'id',
     })
   }
 }
@@ -299,6 +326,7 @@ export const TABLES = [
   'notebooks',
   'pages',
   'audio',
+  'files',
 ] as const
 export type SyncTable = (typeof TABLES)[number]
 

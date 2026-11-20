@@ -58,6 +58,8 @@ export async function deleteNotebook(nb: Notebook) {
   })
   const paths = clips.map((c) => c.path).filter(Boolean) as string[]
   if (paths.length) void supabase.storage.from('milonote-audio').remove(paths)
+  const { removeNotebookFiles } = await import('./pdf')
+  await removeNotebookFiles(nb.id)
   unlockedKeys.delete(nb.id)
 }
 
@@ -121,12 +123,18 @@ export async function saveClip(nb: Notebook, pageId: string, blob: Blob, duratio
   const id = uid()
   const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
   const count = await db.audio.where('pageId').equals(pageId).count()
-  await db.audioBlobs.put({ id, blob })
-  await db.audio.add({ id, notebookId: nb.id, pageId, title: `تسجيل ${count + 1}`, durationMs, createdAt: Date.now(), mime: blob.type || 'audio/webm' })
-  // upload in the background; the clip already plays from this device
+  // fixed path up front (see pdf.ts storeFile)
   const path = `${userId}/${id}.${ext}`
-  const { error } = await supabase.storage.from('milonote-audio').upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: true })
-  if (!error) await db.audio.update(id, { path })
+  await db.audioBlobs.put({ id, blob })
+  await db.audio.add({ id, notebookId: nb.id, pageId, title: `تسجيل ${count + 1}`, durationMs, createdAt: Date.now(), mime: blob.type || 'audio/webm', path })
+  // upload in the background; the clip already plays from this device
+  void (async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { error } = await supabase.storage.from('milonote-audio').upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: true })
+      if (!error) return
+      await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)))
+    }
+  })()
   return id
 }
 

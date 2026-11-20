@@ -7,6 +7,8 @@ import {
   Download,
   Eraser,
   FilePlus2,
+  FileUp,
+  FileDown,
   Hand,
   Lock,
   Mic,
@@ -22,6 +24,7 @@ import {
   Volume2,
   VolumeX,
   Waves,
+  Languages,
   ZoomIn,
   ZoomOut,
   Settings2,
@@ -35,7 +38,10 @@ import { STICKERS, STICKER_IDS } from '../components/notes/stickers'
 import { Button } from '../components/ui/Button'
 import { Confirm } from '../components/ui/Confirm'
 import { db, type Notebook, type NotePage, type PageContent, type PaperKind, type PenKind } from '../lib/db'
-import { INK_COLORS, PAGE_H, PAGE_W, PAPERS, PAPER_COLORS, PENS, drawAll, drawPaper } from '../lib/ink'
+import { INK_COLORS, PAGE_H, PAGE_W, PAPERS, PAPER_COLORS, PENS } from '../lib/ink'
+import { renderPage, exportNotebookPdf } from '../lib/render'
+import { insertFile } from '../lib/pdf'
+import { LANGS, translate } from '../lib/translate'
 import { addPage, clipUrl, deletePage, readContent, removeClip, saveClip, unlockNotebook, writeContent } from '../lib/notes'
 import { unlockedKeys } from '../lib/crypto'
 import { useAuth } from '../lib/auth'
@@ -131,7 +137,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [reading, setReading] = useState(false)
-  const [panel, setPanel] = useState<null | 'stickers' | 'audio' | 'page' | 'pen'>(null)
+  const [panel, setPanel] = useState<null | 'stickers' | 'audio' | 'page' | 'pen' | 'translate'>(null)
   const [delPage, setDelPage] = useState(false)
   const undo = useRef<PageContent[]>([])
   const redo = useRef<PageContent[]>([])
@@ -241,47 +247,45 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   const pageW = Math.max(240, Math.min(wrapW - 24, 900) * zoom)
 
   const exportPng = async () => {
-    if (!content) return
-    const c = document.createElement('canvas')
-    const s = 2
-    c.width = PAGE_W * s
-    c.height = PAGE_H * s
-    const ctx = c.getContext('2d')!
-    ctx.setTransform(s, 0, 0, s, 0, 0)
-    drawPaper(ctx, paper, nb.paperColor)
-    // stickers (rasterise their SVG)
-    for (const st of content.stickers) {
-      const el = document.querySelector(`[data-sticker-id="${st.id}"] svg`)
-      if (!el) continue
-      const svg = new XMLSerializer().serializeToString(el)
-      const img = new Image()
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
-      await img.decode().catch(() => {})
-      ctx.save()
-      const size = 120 * st.s
-      ctx.translate(st.x + size / 2, st.y + size / 2)
-      ctx.rotate((st.r * Math.PI) / 180)
-      ctx.drawImage(img, -size / 2, -size / 2, size, size)
-      ctx.restore()
-    }
-    const ink = document.createElement('canvas')
-    ink.width = c.width
-    ink.height = c.height
-    drawAll(ink.getContext('2d')!, content.strokes, s)
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.drawImage(ink, 0, 0)
-    ctx.setTransform(s, 0, 0, s, 0, 0)
-    ctx.textBaseline = 'top'
-    ctx.direction = 'rtl'
-    for (const t of content.texts) {
-      ctx.fillStyle = t.color
-      ctx.font = `${t.size}px "IBM Plex Sans Arabic", sans-serif`
-      t.text.split('\n').forEach((line, i) => ctx.fillText(line, t.x + t.w, t.y + 4 + i * t.size * 1.45))
-    }
+    if (!content || !page) return
+    await flush()
+    const c = await renderPage(content, { scale: 2, paper, paperColor: nb.paperColor, page })
     const a = document.createElement('a')
     a.href = c.toDataURL('image/png')
     a.download = `${nb.title}-ص${idx + 1}.png`
     a.click()
+  }
+
+  const [busyMsg, setBusyMsg] = useState<string | null>(null)
+  const [fileErr, setFileErr] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const exportPdf = async () => {
+    await flush()
+    setBusyMsg('عم نجهّز الـ PDF…')
+    try {
+      await exportNotebookPdf(nb, pages, (d, t) => setBusyMsg(`عم نجهّز الـ PDF… ${d}/${t}`))
+    } catch {
+      setFileErr('ما قدرنا نعمل الـ PDF. جرّب كمان مرة.')
+    } finally {
+      setBusyMsg(null)
+    }
+  }
+
+  const insert = async (file: File) => {
+    if (!session) return
+    await flush()
+    setFileErr(null)
+    setBusyMsg('عم نضيف الملف…')
+    try {
+      await insertFile(nb, file, idx, session.user.id)
+      setParams({ p: String(idx + 1) }, { replace: true })
+      setPanel(null)
+      setBusyMsg(null)
+    } catch (e) {
+      setBusyMsg(null)
+      setFileErr((e as Error).message)
+    }
   }
 
   const setTool = (patch: Partial<ToolState>) => setTools((t) => ({ ...t, ...patch }))
@@ -323,6 +327,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
           <IconButton label="ممحاة" active={tools.tool === 'eraser'} onClick={() => setTool({ tool: 'eraser' })}><Eraser size={19} /></IconButton>
           <IconButton label="نص" active={tools.tool === 'text'} onClick={() => setTool({ tool: 'text' })}><Type size={19} /></IconButton>
           <IconButton label="تحريك وتحديد" active={tools.tool === 'hand'} onClick={() => setTool({ tool: 'hand' })}><Hand size={19} /></IconButton>
+          <IconButton label="ترجمة" active={panel === 'translate'} onClick={() => setPanel(panel === 'translate' ? null : 'translate')}><Languages size={19} /></IconButton>
           <IconButton label="ملصقات" active={panel === 'stickers'} onClick={() => setPanel(panel === 'stickers' ? null : 'stickers')}><Smile size={19} /></IconButton>
           <Divider />
           <IconButton label="المسطرة" active={tools.ruler} onClick={() => setTool({ ruler: !tools.ruler })}><Ruler size={19} /></IconButton>
@@ -375,6 +380,16 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
                   ))}
                 </div>
               )}
+              {panel === 'translate' && content && (
+                <TranslatePanel
+                  initial={content.texts.find((t) => t.id === selected)?.text ?? ''}
+                  onInsert={(text) => {
+                    const box = { id: uid(), x: 120, y: Math.max(40, ((scroller.current?.scrollTop ?? 0) / pageW) * PAGE_W + 120), w: 560, text, size: 30, color: tools.color }
+                    change({ ...content, texts: [...content.texts, box] })
+                    setSelected(box.id)
+                  }}
+                />
+              )}
               {panel === 'pen' && (
                 <div className="grid gap-3 p-3 sm:grid-cols-2">
                   <label className="text-sm">
@@ -407,7 +422,9 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
                       <button key={c} aria-label={`لون الورق ${c}`} onClick={() => db.notebooks.update(nb.id, { paperColor: c })} className={`size-8 rounded-full border-[1.5px] ${nb.paperColor === c ? 'border-ink ring-2 ring-sage ring-offset-1' : 'border-line'}`} style={{ background: c }} />
                     ))}
                     <div className="flex-1" />
-                    <Button size="sm" variant="ghost" icon={<Download size={16} />} onClick={exportPng}>صورة PNG</Button>
+                    <Button size="sm" variant="ghost" icon={<FileUp size={16} />} onClick={() => fileInput.current?.click()}>أضف PDF أو صورة</Button>
+                    <Button size="sm" variant="ghost" icon={<FileDown size={16} />} onClick={exportPdf}>صدّر الدفتر PDF</Button>
+                    <Button size="sm" variant="ghost" icon={<Download size={16} />} onClick={exportPng}>الصفحة PNG</Button>
                     <Button size="sm" variant="danger" icon={<Trash2 size={16} />} onClick={() => setDelPage(true)} disabled={pages.length <= 1}>احذف الصفحة</Button>
                   </div>
                 </div>
@@ -423,12 +440,32 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
       <div ref={(el) => { wrapRef.current = el; scroller.current = el }} className="relative flex-1 overflow-auto" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
         <div className="flex min-h-full justify-center px-3 py-5" style={{ minWidth: pageW + 24 }}>
           {content && page ? (
-            <PageCanvas content={content} paper={paper} paperColor={nb.paperColor} width={pageW} tools={tools} onChange={change} selected={selected} onSelect={setSelected} />
+            <PageCanvas content={content} paper={paper} paperColor={nb.paperColor} bg={page.bg} width={pageW} tools={tools} onChange={change} selected={selected} onSelect={setSelected} />
           ) : (
             <div className="animate-pulse rounded-md bg-white" style={{ width: pageW, height: (pageW * PAGE_H) / PAGE_W }} />
           )}
         </div>
       </div>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (f) void insert(f)
+        }}
+      />
+      {(busyMsg || fileErr) && (
+        <div className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4" style={{ bottom: 'calc(var(--safe-bottom) + 70px)' }}>
+          <div className={`pointer-events-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-lg ${fileErr ? 'bg-peach' : 'bg-ink text-white'}`} role="status">
+            {busyMsg ?? fileErr}
+            {fileErr && <button className="font-bold" onClick={() => setFileErr(null)} aria-label="سكّر">×</button>}
+          </div>
+        </div>
+      )}
 
       {/* page nav */}
       <footer className="z-20 flex items-center gap-1 border-t border-line bg-paper/95 px-2 pt-1.5 backdrop-blur" style={{ paddingBottom: 'max(var(--safe-bottom), 8px)' }}>
@@ -607,7 +644,7 @@ function ReadingView({ nb, pages, onClose, start }: { nb: Notebook; pages: NoteP
           {pages.map((p, i) => (
             <div key={p.id} id={`read-${i}`} className="flex flex-col items-center gap-2">
               {contents[i] ? (
-                <PageCanvas content={contents[i]!} paper={p.paper ?? nb.paper} paperColor={nb.paperColor} width={width} readOnly />
+                <PageCanvas content={contents[i]!} paper={p.paper ?? nb.paper} paperColor={nb.paperColor} bg={p.bg} width={width} readOnly />
               ) : (
                 <div className="rounded-md bg-white/10" style={{ width, height: (width * PAGE_H) / PAGE_W }} />
               )}
@@ -616,6 +653,56 @@ function ReadingView({ nb, pages, onClose, start }: { nb: Notebook; pages: NoteP
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+function TranslatePanel({ initial, onInsert }: { initial: string; onInsert: (t: string) => void }) {
+  const [text, setText] = useState(initial)
+  const [to, setTo] = useState(() => (/[\u0600-\u06FF]/.test(initial) ? 'en' : 'ar'))
+  const [out, setOut] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => setText(initial), [initial])
+  return (
+    <div className="space-y-2 p-3">
+      <div className="flex gap-2">
+        <textarea className="field min-h-16 flex-1" dir="auto" value={text} onChange={(e) => setText(e.target.value)} placeholder="اكتب أو اختار مربع نص بالصفحة…" aria-label="النص للترجمة" maxLength={500} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm">لـ</span>
+        <select className="field min-h-10 w-auto py-1" value={to} onChange={(e) => setTo(e.target.value)} aria-label="لغة الترجمة">
+          {LANGS.map((l) => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={!text.trim() || busy}
+          icon={<Languages size={16} />}
+          onClick={async () => {
+            setBusy(true)
+            setErr(null)
+            try {
+              setOut(await translate(text, to))
+            } catch (e) {
+              setErr((e as Error).message)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {busy ? '…' : 'ترجم'}
+        </Button>
+        <span className="text-[0.7rem] text-ink-faint">النص بينبعت لخدمة ترجمة خارجية (MyMemory)</span>
+      </div>
+      {err && <p className="rounded-xl bg-peach px-3 py-1.5 text-sm">{err}</p>}
+      {out && (
+        <div className="flex items-start gap-2 rounded-2xl bg-mint/60 p-3">
+          <p className="flex-1 whitespace-pre-wrap" dir="auto">{out}</p>
+          <Button size="sm" variant="ghost" onClick={() => onInsert(out)}>حطها بالصفحة</Button>
+        </div>
+      )}
     </div>
   )
 }

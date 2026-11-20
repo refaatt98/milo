@@ -1,5 +1,8 @@
 import { motion } from 'motion/react'
-import { Lock, LockOpen, MoreVertical, Plus, Search, Trash2, Pencil } from 'lucide-react'
+import { FileUp, Loader2, Lock, LockOpen, MoreVertical, Plus, Search, Trash2, Pencil } from 'lucide-react'
+import { useRef } from 'react'
+import { useAuth } from '../lib/auth'
+import { notebookFromPdf } from '../lib/pdf'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -27,13 +30,33 @@ export default function NotesPage() {
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
   const [menu, setMenu] = useState<Notebook | null>(null)
+  const { session } = useAuth()
+  const pdfInput = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importErr, setImportErr] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const importPdf = async (file: File) => {
+    if (!session) return
+    if (!(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return setImportErr('اختار ملف PDF.')
+    setImportErr(null)
+    setImporting(true)
+    try {
+      const nb = await notebookFromPdf(file, session.user.id, COVERS[(notebooks?.length ?? 0) % COVERS.length].id)
+      nav(`/notes/${nb.id}`)
+    } catch (e) {
+      setImportErr((e as Error).message)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const list = useMemo(() => (notebooks ?? []).filter((n) => !q.trim() || n.title.includes(q.trim())), [notebooks, q])
 
   return (
     <div>
       <PageHeader eyebrow="MiloNote" title="الدفاتر" art={<Milo mood="studying" size={96} />}>
-        دفاتر بلا حدود، صفحات بلا حدود. اكتب بخط إيدك، لزّق ملصقات، سجّل صوتك، واقفل اللي بدك ياه بكلمة سر.
+        دفاتر وصفحات بلا حدود. استورد PDF واكتب فوقه، اكتب بخط إيدك، لزّق ملصقات، سجّل صوتك، واقفل اللي بدك ياه بكلمة سر.
       </PageHeader>
 
       <div className="mb-6 flex gap-2">
@@ -42,12 +65,45 @@ export default function NotesPage() {
           <input className="field ps-10" placeholder="دوّر على دفتر…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="بحث بالدفاتر" />
         </label>
         <Button onClick={() => setCreating(true)} icon={<Plus size={20} />}>
-          دفتر جديد
+          <span className="hidden sm:inline">دفتر جديد</span>
         </Button>
+        <Button variant="butter" onClick={() => pdfInput.current?.click()} disabled={importing} icon={importing ? <Loader2 size={20} className="animate-spin" /> : <FileUp size={20} />}>
+          استورد PDF
+        </Button>
+        <input
+          ref={pdfInput}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (f) void importPdf(f)
+          }}
+        />
       </div>
+      {importErr && (
+        <p className="mb-4 rounded-2xl bg-peach px-3 py-2 text-sm" role="alert">
+          {importErr}
+        </p>
+      )}
+      {importing && <p className="mb-4 rounded-2xl bg-butter/60 px-3 py-2 text-sm">عم نجهّز الـ PDF كدفتر… كل صفحة رح تصير صفحة بتكتب عليها.</p>}
 
-      {/* the shelf */}
-      <div className="relative">
+      {/* the shelf — drop a PDF anywhere on it */}
+      <div
+        className={`relative rounded-3xl transition ${dragOver ? 'bg-mint/60 outline-2 outline-dashed outline-sage' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          const f = e.dataTransfer.files?.[0]
+          if (f) void importPdf(f)
+        }}
+      >
         <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
           <motion.button
             whileHover={{ y: -4 }}

@@ -33,9 +33,9 @@ export const STICKERS: Record<string, { label: string; render: () => ReactElemen
   'milo-tea': { label: 'ميلو بشرب شاي', render: miloSticker('break') },
   'milo-sleepy': { label: 'ميلو نعسان', render: miloSticker('sleepy') },
   'milo-cheer': { label: 'ميلو بشجّع', render: miloSticker('encouraging') },
-  tulip: { label: 'توليب', render: () => <Plant kind="tulip" stage={4} size={80} /> },
-  sunflower: { label: 'دوار الشمس', render: () => <Plant kind="sunflower" stage={4} size={80} /> },
-  cactus: { label: 'صبّار', render: () => <Plant kind="cactus" stage={4} size={80} /> },
+  tulip: { label: 'توليب', render: () => <Plant kind="tulip" stage={4} size={80} still /> },
+  sunflower: { label: 'دوار الشمس', render: () => <Plant kind="sunflower" stage={4} size={80} still /> },
+  cactus: { label: 'صبّار', render: () => <Plant kind="cactus" stage={4} size={80} still /> },
   star: { label: 'نجمة', render: shape(starD(), '#F9E9A7') },
   heart: { label: 'قلب', render: shape('M50 88C50 88 8 62 8 34C8 18 20 10 32 10C42 10 48 18 50 24C52 18 58 10 68 10C80 10 92 18 92 34C92 62 50 88 50 88Z', '#F4A6B7') },
   check: {

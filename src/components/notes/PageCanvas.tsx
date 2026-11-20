@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Minus, Plus, RotateCw, Trash2 } from 'lucide-react'
-import type { PageContent, PaperKind, PenKind, Stroke, TextBox } from '../../lib/db'
+import type { PageBg, PageContent, PaperKind, PenKind, Stroke, TextBox } from '../../lib/db'
+import { drawBg, renderBg } from '../../lib/pdf'
 import { PAGE_H, PAGE_W, drawAll, drawPaper, drawStroke, isDark, penDef, r1, snapLine, stabilize, strokeHit } from '../../lib/ink'
 import { asmrMove, asmrStart, asmrStop } from '../../lib/asmr'
 import { uid } from '../../lib/id'
@@ -23,6 +24,8 @@ interface Props {
   content: PageContent
   paper: PaperKind
   paperColor: string
+  /** imported PDF page or photo under the ink */
+  bg?: PageBg
   width: number
   tools?: ToolState
   readOnly?: boolean
@@ -33,7 +36,7 @@ interface Props {
 
 const DPR = () => Math.min(2, window.devicePixelRatio || 1)
 
-export function PageCanvas({ content, paper, paperColor, width, tools, readOnly, onChange, selected = null, onSelect }: Props) {
+export function PageCanvas({ content, paper, paperColor, bg, width, tools, readOnly, onChange, selected = null, onSelect }: Props) {
   const paperRef = useRef<HTMLCanvasElement>(null)
   const inkRef = useRef<HTMLCanvasElement>(null)
   const liveRef = useRef<HTMLCanvasElement>(null)
@@ -53,13 +56,28 @@ export function PageCanvas({ content, paper, paperColor, width, tools, readOnly,
     }
   }, [width, height])
 
+  const [bgState, setBgState] = useState<'none' | 'loading' | 'ready' | 'missing'>('none')
+  const bgKey = bg ? `${bg.fileId}:${bg.kind === 'pdf' ? bg.page : 'img'}` : ''
   useLayoutEffect(() => {
     const c = paperRef.current
     if (!c) return
     const ctx = c.getContext('2d')!
     ctx.setTransform(scale, 0, 0, scale, 0, 0)
-    drawPaper(ctx, paper, paperColor)
-  }, [paper, paperColor, scale, width])
+    drawPaper(ctx, bg ? 'blank' : paper, bg ? '#FFFFFF' : paperColor)
+    if (!bg) return setBgState('none')
+    let alive = true
+    setBgState('loading')
+    void renderBg(bg, width * DPR()).then((img) => {
+      if (!alive) return
+      if (!img) return setBgState('missing')
+      ctx.setTransform(scale, 0, 0, scale, 0, 0)
+      drawBg(ctx, img)
+      setBgState('ready')
+    })
+    return () => {
+      alive = false
+    }
+  }, [paper, paperColor, scale, width, bgKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
     const c = inkRef.current
@@ -245,6 +263,12 @@ export function PageCanvas({ content, paper, paperColor, width, tools, readOnly,
       onPointerCancel={onDragEnd}
     >
       <canvas ref={paperRef} className="absolute inset-0 size-full" aria-hidden />
+      {bgState === 'loading' && <div className="absolute inset-0 grid place-items-center text-sm text-ink-faint">عم نفتح الصفحة…</div>}
+      {bgState === 'missing' && (
+        <div className="absolute inset-x-6 top-1/3 rounded-2xl bg-butter/80 p-4 text-center text-sm">
+          الملف الأصلي لسا ما وصل لهاد الجهاز (بكون عم ينرفع من الجهاز الثاني). كتابتك محفوظة وبتظهر فوقه لما يوصل.
+        </div>
+      )}
       <canvas ref={inkRef} className="absolute inset-0 size-full" aria-hidden />
       {/* stickers sit above ink, texts above stickers */}
       {content.stickers.map((s) => {

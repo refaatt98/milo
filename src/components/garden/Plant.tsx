@@ -234,8 +234,16 @@ export const SEED_COLORS: Record<PlantKind, string> = {
   blossom: '#FBE3EA',
 }
 
-export function Plant({ kind, stage, size = 120, label }: { kind: PlantKind; stage: Stage; size?: number; label?: string }) {
+export function Plant({ kind, stage, size = 120, label, still = false }: { kind: PlantKind; stage: Stage; size?: number; label?: string; still?: boolean }) {
   const Sp = SPECIES[kind]
+  if (still)
+    return (
+      <svg viewBox="0 0 120 150" width={size} height={size * 1.25} role="img" aria-label={label} overflow="visible">
+        {stage === 0 && <Seed color={SEED_COLORS[kind]} />}
+        {stage === 1 && <Sprout />}
+        {stage >= 2 && <Sp s={stage} />}
+      </svg>
+    )
   return (
     <svg viewBox="0 0 120 150" width={size} height={size * 1.25} role="img" aria-label={label} overflow="visible">
       <motion.g
