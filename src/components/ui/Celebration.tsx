@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Milo, { type MiloMood } from '../character/Milo'
+import { useUiMode } from '../../lib/mode'
 
 export interface CelebrationEvent {
   title: string
@@ -57,9 +58,14 @@ function Confetti() {
 export function CelebrationProvider({ children }: { children: ReactNode }) {
   const [ev, setEv] = useState<(CelebrationEvent & { id: number }) | null>(null)
   const timer = useRef<number | undefined>(undefined)
-  const celebrate = useCallback((e: CelebrationEvent) => {
-    setEv({ ...e, id: Date.now() })
-  }, [])
+  const mode = useUiMode()
+  const celebrate = useCallback(
+    (e: CelebrationEvent) => {
+      // serious mode: quiet confirmation toasts, no confetti overlays
+      setEv({ ...e, size: mode === 'serious' ? 'small' : e.size, id: Date.now() })
+    },
+    [mode],
+  )
   useEffect(() => {
     if (!ev) return
     clearTimeout(timer.current)

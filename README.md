@@ -1,8 +1,25 @@
-# milo. — رفيق الدراسة 🌱
+# MiloNote — دفترك ورفيق دراستك 🌱
 
-**milo.** is a character-driven study companion for a nine-day study challenge (20–28 November 2026). Milo, a small sprout-headed creature, lives inside the app. Milo reads with you while the timer runs, sips tea on breaks, cheers when a unit is done, and wears a graduation cap during exam week.
+**MiloNote** is a character-driven study companion with accounts, a personal study plan per user, handwritten notebooks, and an admin dashboard. Milo, a small sprout-headed creature, lives inside the app. Milo reads with you while the timer runs, sips tea on breaks, cheers when a unit is done, and wears a graduation cap during exam week.
 
-The interface is in Palestinian Arabic (RTL), mobile-first, and works fully offline after the first load. It needs no login, no server and no database server.
+The interface is in Palestinian Arabic (RTL) and mobile-first. Data is local-first (IndexedDB, works offline) and syncs to the user's account in Supabase.
+
+## Accounts & roles
+
+- **Sign up / sign in** with email + password (Supabase Auth). Sign-up goes through the `milonote-signup` edge function, which creates an already-confirmed account, so the shared project's email settings don't need changing.
+- **Admin:** `refaat@gmail.com`. This account starts with the original nine-day plan (20–28 Nov 2026). Every other account starts empty and builds its own plan with the **«خطتي»** wizard (units → days → daily goal).
+- **Admin dashboard** (`/admin`, admins only, enforced by the database): lists every user with name, email, join date, last sign-in/activity, study hours, sessions, topic progress and notebooks, and can send a password-reset email. Passwords are never shown: Supabase stores only one-way hashes, so nobody can read them.
+- **Playful ⇄ Serious switch:** one tap turns the whole app from the illustrated Milo world into a calm, professional look (no mascot, flat cards, a timeline instead of the map, a table instead of the garden), and back. The choice is saved on the account.
+
+## MiloNote notebooks (`/notes`)
+
+Unlimited notebooks and pages · 6 pens (ballpoint, fountain with nib angle, pencil with grain, marker, pressure brush, highlighter) with Apple Pencil pressure · any colour · writing stabilizer · ruler with 15° snapping · stroke eraser · text boxes · stickers (Milo, plants, labels) · 5 paper types and paper colours · 10 original covers · voice notes per page (uploaded to Storage) · password lock with real AES-256-GCM encryption (the password never leaves the device) · paper-scratch writing sound (ASMR) · reading mode · PNG export · undo/redo · stylus-only mode (palm rejection).
+
+## Supabase
+
+Everything lives in its own `milonote` schema (tables `profiles`, `records`; storage bucket `milonote-audio`) with row-level security, so it is isolated from other apps in the same project. The SQL is in `supabase/migrations/`, and the edge function is in `supabase/functions/milonote-signup/`. The browser uses only the public anon key; you can override it with `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
+
+After deploying to Netlify, add your site URL (e.g. `https://your-site.netlify.app/**`) under Supabase → Authentication → URL Configuration → Redirect URLs. Password-reset emails need this to link back to MiloNote.
 
 ## Features
 
@@ -19,7 +36,7 @@ The interface is in Palestinian Arabic (RTL), mobile-first, and works fully offl
 
 All days are calculated in **Asia/Hebron** time. A session that crosses midnight is split correctly between the two days, and daylight-saving changes are handled.
 
-> **Storage note:** data lives in this browser's IndexedDB on this device only. Nothing syncs between devices automatically. Use *Settings → Download backup* to move or protect your data.
+> **Sync:** every change is saved on the device first and pushed to the account in the background. Signing in on another device brings everything back. JSON export/import is still available as an extra backup.
 
 ## Tech
 
@@ -65,7 +82,7 @@ npm run preview
 
 ## Deploy: GitHub → Netlify (automatic)
 
-The repository is already configured. `netlify.toml` sets the build command (`npm run build`), the publish directory (`dist`), Node 22, and the SPA redirect that keeps client-side routes working after a refresh. No environment variables or secrets are needed.
+The repository is already configured. `netlify.toml` sets the build command (`npm run build`), the publish directory (`dist`), Node 22, and the SPA redirect that keeps client-side routes working after a refresh. No environment variables or secrets are needed: the public Supabase URL and anon key are built in.
 
 1. Push this repository to GitHub.
 2. In Netlify, choose **Add new site → Import an existing project → GitHub** and pick the repository.

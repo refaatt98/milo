@@ -4,8 +4,9 @@ import Milo from '../character/Milo'
 import { DestinationArt, DESTINATION_NAMES } from './Destinations'
 import type { ChallengeDay } from '../../lib/db'
 import { formatDayShort, weekdayName } from '../../lib/time'
+import { useUiMode } from '../../lib/mode'
 
-const XS = [30, 70, 32, 68, 30, 70, 34, 66, 50]
+const XS = [30, 70, 32, 68, 30, 70, 34, 66]
 const ROW = 168
 
 interface Props {
@@ -27,9 +28,43 @@ function pathThrough(points: [number, number][]) {
   return d
 }
 
-export function AdventureMap({ days, today, isComplete, onSelect }: Props) {
+export function AdventureMap(props: Props) {
+  const mode = useUiMode()
+  if (!props.days.length)
+    return <div className="sheet p-8 text-center text-ink-soft">ما في أيام بالخطة لسا. افتح «خطتي» وابني جدولك.</div>
+  return mode === 'serious' ? <Timeline {...props} /> : <IllustratedMap {...props} />
+}
+
+function Timeline({ days, today, isComplete, onSelect }: Props) {
+  return (
+    <ol className="sheet divide-y divide-line">
+      {days.map((d, i) => {
+        const done = isComplete(d)
+        const isToday = d.date === today
+        return (
+          <li key={d.id}>
+            <button onClick={() => onSelect(d)} className={`flex w-full items-center gap-4 px-4 py-3 text-start hover:bg-paper ${isToday ? 'bg-mint/50' : ''}`}>
+              <span className={`num grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold ${done ? 'bg-sage text-white' : 'ring-1 ring-line'}`}>
+                {done ? <Check size={16} /> : i + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">{d.title}</span>
+                <span className="text-xs text-ink-soft">
+                  {weekdayName(d.date)} · {formatDayShort(d.date)} · {d.kind === 'exam' ? 'امتحانات' : 'دراسة'}
+                </span>
+              </span>
+              {isToday && <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-semibold text-white">اليوم</span>}
+            </button>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function IllustratedMap({ days, today, isComplete, onSelect }: Props) {
   const height = days.length * ROW + 90
-  const pts: [number, number][] = days.map((_, i) => [XS[i % XS.length], 70 + i * ROW])
+  const pts: [number, number][] = days.map((_, i) => [i === days.length - 1 && days.length > 1 ? 50 : XS[i % XS.length], 70 + i * ROW])
   const full = pathThrough(pts)
   const reachIdx = Math.max(
     -1,

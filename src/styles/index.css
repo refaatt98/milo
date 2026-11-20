@@ -213,3 +213,80 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* ───────── Serious mode: a calm, professional look tied to the account ───────── */
+@layer components {
+  [data-mode='serious'] body {
+    background-color: #f6f7f6;
+    background-image: none;
+  }
+  [data-mode='serious'] h1,
+  [data-mode='serious'] h2,
+  [data-mode='serious'] h3,
+  [data-mode='serious'] .font-display {
+    font-family: var(--font-sans);
+    letter-spacing: -0.01em;
+  }
+  [data-mode='serious'] .sheet {
+    border-radius: 14px;
+    border-color: #e3e6e4;
+    box-shadow: 0 1px 2px rgba(20, 30, 25, 0.04);
+    rotate: none;
+  }
+  [data-mode='serious'] .tape,
+  [data-mode='serious'] .playful-only {
+    display: none !important;
+  }
+  [data-mode='serious'] .squiggle-under {
+    background-image: none;
+    padding-bottom: 0;
+  }
+  [data-mode='serious'] .ruled,
+  [data-mode='serious'] .dotgrid {
+    background-image: none;
+  }
+}
+[data-mode='serious'] .serious-hide {
+  display: none !important;
+}
+/* flatten the hand-drawn "sticker" look of playful mode */
+[data-mode='serious'] [class*='shadow-[2px_2px_0'],
+[data-mode='serious'] [class*='shadow-[3px_3px_0'],
+[data-mode='serious'] [class*='shadow-[4px_4px_0'],
+[data-mode='serious'] [class*='shadow-[0_3px_0'],
+[data-mode='serious'] [class*='shadow-[0_4px_0'] {
+  box-shadow: 0 1px 2px rgba(20, 30, 25, 0.06) !important;
+}
+[data-mode='serious'] [class*='rounded-[2'],
+[data-mode='serious'] [class*='rounded-[3'] {
+  border-radius: 14px !important;
+}
+[data-mode='serious'] .border-ink {
+  border-color: #dfe3e0 !important;
+}
+[data-mode='serious'] [class*='rotate-[-'],
+[data-mode='serious'] [class*='rotate-[2'],
+[data-mode='serious'] [class*='rotate-[4'],
+[data-mode='serious'] [class*='rotate-[5'] {
+  rotate: none !important;
+}
+[data-mode='serious'] .bg-butter,
+[data-mode='serious'] .bg-lavender,
+[data-mode='serious'] .bg-peach,
+[data-mode='serious'] .bg-sky,
+[data-mode='serious'] .bg-mint {
+  background-color: #ffffff !important;
+}
+[data-mode='serious'] .bg-ink {
+  background-color: #2f4a3c !important;
+}
+[data-mode='serious'] .num {
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+.serious-only {
+  display: none;
+}
+[data-mode='serious'] .serious-only {
+  display: inline-block;
+}

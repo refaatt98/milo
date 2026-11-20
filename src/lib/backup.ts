@@ -1,6 +1,7 @@
 import { db, TABLES } from './db'
+import { sync } from './sync'
 
-export const BACKUP_APP = 'milo-study'
+export const BACKUP_APP = 'milo-study' // kept for compatibility with older backups
 export const BACKUP_VERSION = 1
 
 export async function exportData() {
@@ -41,14 +42,21 @@ export async function importData(text: string) {
   }
   await db.transaction('rw', TABLES.map((t) => db.table(t)), async () => {
     for (const t of TABLES) {
-      const rows = (p.data![t] as unknown[] | undefined) ?? []
-      await db.table(t).clear()
+      const rows = p.data![t] as unknown[] | undefined
+      if (rows === undefined) continue // older backups don't have notebooks — keep what's here
+      // delete row by row (not clear()) so the cloud copy is updated too
+      const keys = await db.table(t).toCollection().primaryKeys()
+      if (keys.length) await db.table(t).bulkDelete(keys)
       if (rows.length) await db.table(t).bulkPut(rows)
     }
   })
 }
 
+/** Wipes this account's data in the cloud and on this device, then reloads into a fresh start. */
 export async function resetAll() {
+  await sync.wipeRemote()
+  sync.detach()
+  db.close()
   await db.delete()
   location.reload()
 }

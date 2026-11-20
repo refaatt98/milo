@@ -1,8 +1,10 @@
 import { AnimatePresence, motion } from 'motion/react'
 import type { ReactNode } from 'react'
+import { useUiMode } from '../../lib/mode'
 
 /** Hand-drawn speech bubble. `tail` = which side the tail points to. */
 export function Bubble({ children, tail = 'right', className = '', k }: { children: ReactNode; tail?: 'right' | 'left' | 'bottom'; className?: string; k?: string }) {
+  if (useUiMode() === 'serious') return null
   return (
     <AnimatePresence mode="wait">
       <motion.div

@@ -53,6 +53,7 @@ export default function Today() {
     return localTimeOn(d, h, m)
   })()
   const firstDay = days?.[0]?.date
+  const noPlan = days !== undefined && days.length === 0 && progress !== undefined && progress.list.length === 0
 
   return (
     <div className="space-y-6">
@@ -84,12 +85,20 @@ export default function Today() {
         </div>
       </section>
 
+      {noPlan && (
+        <section className="relative overflow-hidden rounded-[30px_24px_32px_26px] border-[1.5px] border-ink bg-butter p-6 shadow-[4px_4px_0_#27372F]">
+          <h2 className="text-2xl font-extrabold">يلا نبني خطتك 🗺️</h2>
+          <p className="mt-1 max-w-lg text-ink-soft">حسابك جديد وفاضي. ضيف وحداتك وأيامك، ورح تصير عندك خريطة مغامرة، حديقة، وجدول يومي — كلهم إلك.</p>
+          <Button className="mt-4" onClick={() => nav('/plan')}>ابني جدولي</Button>
+        </section>
+      )}
+
       <div className="grid gap-5 lg:grid-cols-12">
         {/* goal jar */}
         <section className="sheet sheet-tilt-l relative overflow-hidden p-5 lg:col-span-7" aria-labelledby="goal-h">
           <div className="tape -top-2 right-12 rotate-[-5deg]" />
           <div className="flex gap-4">
-            <div className="shrink-0">
+            <div className="playful-only shrink-0">
               <StarJar percent={stats.percent} size={128} />
             </div>
             <div className="min-w-0 flex-1">
@@ -141,7 +150,7 @@ export default function Today() {
               <Button className="flex-1" onClick={() => nav('/focus')}>افتح المؤقت</Button>
             )}
           </div>
-          <svg className="pointer-events-none absolute -bottom-6 -left-6 opacity-60" width="120" height="120" viewBox="0 0 120 120" aria-hidden>
+          <svg className="playful-only pointer-events-none absolute -bottom-6 -left-6 opacity-60" width="120" height="120" viewBox="0 0 120 120" aria-hidden>
             <circle cx="60" cy="60" r="44" fill="none" stroke="#6F9876" strokeWidth="2" strokeDasharray="3 7" />
             <circle cx="60" cy="60" r="28" fill="none" stroke="#6F9876" strokeWidth="2" />
           </svg>

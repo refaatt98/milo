@@ -1,5 +1,4 @@
-import type { Transaction } from 'dexie'
-import type { ChallengeDay, ChecklistItem, PlannerTask, Topic, Unit, PlantKind, Destination, DayKind } from '../lib/db'
+import type { MiloDB, ChallengeDay, ChecklistItem, PlannerTask, Topic, Unit, PlantKind, Destination, DayKind } from '../lib/db'
 import { uid } from '../lib/id'
 
 export const CHALLENGE_START = '2026-11-20'
@@ -90,13 +89,25 @@ export function buildChecklist(): ChecklistItem[] {
   ].map((text, i) => ({ id: uid(), order: i, text, done: false }))
 }
 
-export function seedDatabase(tx: Transaction) {
+/** The original nine-day plan (admin account). */
+export async function seedFullPlan(db: MiloDB) {
   const { units, topics } = buildUnits()
   const days = buildDays()
   const tasks = days.flatMap((d) => buildTasksForDay(d.date, d.unitIds))
-  tx.table('units').bulkAdd(units)
-  tx.table('topics').bulkAdd(topics)
-  tx.table('days').bulkAdd(days)
-  tx.table('tasks').bulkAdd(tasks)
-  tx.table('checklist').bulkAdd(buildChecklist())
+  await db.transaction('rw', [db.units, db.topics, db.days, db.tasks, db.checklist, db.kv], async () => {
+    await db.units.bulkAdd(units)
+    await db.topics.bulkAdd(topics)
+    await db.days.bulkAdd(days)
+    await db.tasks.bulkAdd(tasks)
+    await db.checklist.bulkAdd(buildChecklist())
+    await db.kv.put({ key: 'seeded', value: 'full' })
+  })
+}
+
+/** New accounts start empty and build their own plan. */
+export async function seedEmpty(db: MiloDB) {
+  await db.transaction('rw', [db.checklist, db.kv], async () => {
+    await db.checklist.bulkAdd(buildChecklist())
+    await db.kv.put({ key: 'seeded', value: 'empty' })
+  })
 }

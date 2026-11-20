@@ -38,7 +38,7 @@ export function TimerWatcher() {
   // Keep the document title useful while a session runs in a background tab
   useEffect(() => {
     const running = timers?.find((t) => t.status === 'running')
-    document.title = running ? `● ${formatDuration(stats.todayMs)} · milo.` : 'milo. — رفيق الدراسة'
+    document.title = running ? `● ${formatDuration(stats.todayMs)} · MiloNote` : 'MiloNote — دفترك ورفيق دراستك'
   }, [timers, stats.todayMs])
 
   return null

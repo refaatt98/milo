@@ -4,6 +4,8 @@ import { Plant } from './Plant'
 import { plantStage, type UnitProgress } from '../../lib/stats'
 import type { Topic } from '../../lib/db'
 import './garden.css'
+import { useUiMode } from '../../lib/mode'
+import { ProgressBar } from '../ui/Progress'
 
 const STAGE_NAMES = ['بذرة', 'برعم صغير', 'أوراق', 'بلّشت تزهّر', 'نبتة كاملة']
 
@@ -16,6 +18,14 @@ interface Props {
 
 /** The study garden: one plant per unit, grown from real topic completion. */
 export function Garden({ progress, topics, onSelect, compact }: Props) {
+  const mode = useUiMode()
+  if (mode === 'serious') return <ProgressTable progress={progress} onSelect={onSelect} />
+  if (!progress.length)
+    return (
+      <div className="garden-scene grid min-h-40 place-items-center rounded-[34px_28px_36px_30px] border-[1.5px] border-dashed border-line p-6 text-center text-ink-soft">
+        الحديقة فاضية. ضيف وحداتك من «خطتي» وكل وحدة رح تصير نبتة 🌱
+      </div>
+    )
   // Milo stands beside the most recently completed unit's plant.
   const completed = progress.filter((p) => p.percent >= 100)
   const lastDone = completed
@@ -89,3 +99,22 @@ export function Garden({ progress, topics, onSelect, compact }: Props) {
 }
 
 export { STAGE_NAMES }
+
+function ProgressTable({ progress, onSelect }: { progress: UnitProgress[]; onSelect?: (unitId: string) => void }) {
+  if (!progress.length) return <div className="sheet p-6 text-center text-ink-soft">لا توجد وحدات بعد. أضف وحداتك من صفحة «خطتي».</div>
+  return (
+    <div className="sheet divide-y divide-line">
+      {progress.map((p) => (
+        <button key={p.unit.id} onClick={() => onSelect?.(p.unit.id)} className="grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1.5 px-4 py-3 text-start hover:bg-paper">
+          <span className="font-semibold">{p.unit.name}</span>
+          <span className="num text-sm text-ink-soft">
+            {p.done}/{p.total} · {p.percent}%
+          </span>
+          <span className="col-span-2">
+            <ProgressBar value={p.percent} label={p.unit.name} height={6} />
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}

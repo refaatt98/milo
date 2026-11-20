@@ -1,4 +1,5 @@
 import { memo, useId } from 'react'
+import { useUiMode } from '../../lib/mode'
 import './milo.css'
 
 export type MiloMood =
@@ -20,6 +21,8 @@ interface Props {
   title?: string
   /** turn off ambient motion (e.g. many Milos on a screen) */
   still?: boolean
+  /** render even in serious mode (e.g. stickers the user placed on a page) */
+  force?: boolean
 }
 
 const INK = '#27372F'
@@ -248,8 +251,10 @@ function Heart() {
   )
 }
 
-function MiloBase({ mood = 'idle', size = 160, cap = false, className = '', title, still = false }: Props) {
+function MiloBase({ mood = 'idle', size = 160, cap = false, className = '', title, still = false, force = false }: Props) {
   const clip = useId().replace(/:/g, '')
+  const uiMode = useUiMode()
+  if (uiMode === 'serious' && !force) return null
   const arms =
     mood === 'studying' || mood === 'focused'
       ? ARMS.hold

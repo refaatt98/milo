@@ -1,4 +1,7 @@
-import { Download, Upload, RotateCcw, ShieldAlert } from 'lucide-react'
+import { Download, Upload, RotateCcw, ShieldAlert, LogOut, KeyRound, UserRound } from 'lucide-react'
+import { useAuth } from '../lib/auth'
+import { supabase } from '../lib/supabase'
+import { ModeToggle } from '../components/ui/ModeToggle'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import Milo from '../components/character/Milo'
@@ -24,6 +27,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <PageHeader eyebrow="ترتيبات صغيرة" title="الإعدادات" art={<Milo mood="idle" size={92} />} />
+      <AccountSection />
 
       <section className="sheet space-y-5 p-5">
         <SectionTitle>الهدف والمؤقت</SectionTitle>
@@ -57,7 +61,7 @@ export default function SettingsPage() {
       <section className="sheet space-y-4 p-5">
         <SectionTitle>النسخ الاحتياطي</SectionTitle>
         <p className="text-sm text-ink-soft">
-          بياناتك محفوظة بس على هاد الجهاز وهاد المتصفح (IndexedDB). <strong className="text-ink">ما في مزامنة تلقائية بين الأجهزة.</strong> إذا بدك تنقلها لجهاز ثاني أو تحميها، نزّل نسخة JSON واستوردها هناك.
+          كل إشي بينحفظ على جهازك أول (بيشتغل بدون إنترنت) وبيتزامن مع حسابك تلقائيًا لما يكون في نت، فبتلاقي جدولك ودفاترك على أي جهاز بتسجّل دخول منه. النسخة JSON هي احتياط إضافي إلك.
         </p>
         {counts && (
           <p className="text-sm">
@@ -103,14 +107,14 @@ export default function SettingsPage() {
 
       <section className="sheet space-y-3 p-5">
         <SectionTitle>البداية من جديد</SectionTitle>
-        <p className="text-sm text-ink-soft">بيمسح كل الجلسات والمهام والعلامات وبيرجّع الجدول الأصلي. نزّل نسخة احتياطية قبل.</p>
+        <p className="text-sm text-ink-soft">بيمسح كل بيانات حسابك (الجلسات، الجدول، الدفاتر، العلامات) من الجهاز ومن الحساب. نزّل نسخة احتياطية قبل.</p>
         <Button variant="danger" icon={<RotateCcw size={18} />} onClick={() => setConfirmReset(true)}>
           امسح كل البيانات
         </Button>
       </section>
 
       <p className="pb-4 text-center text-xs text-ink-faint">
-        <span className="font-num italic">milo.</span> — يعمل بدون تسجيل دخول وبدون إنترنت بعد أول تحميل.
+        <span className="font-num italic">MiloNote.</span> — بيشتغل بدون إنترنت، وبيتزامن مع حسابك لما يرجع النت.
       </p>
 
       <Confirm
@@ -139,5 +143,59 @@ export default function SettingsPage() {
         onConfirm={() => resetAll()}
       />
     </div>
+  )
+}
+
+function AccountSection() {
+  const { profile, updateName, signOut } = useAuth()
+  const celebrate = useCelebrate()
+  const [name, setName] = useState(profile?.name ?? '')
+  const [pw, setPw] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  return (
+    <section className="sheet space-y-4 p-5">
+      <SectionTitle action={<ModeToggle />}>الحساب</SectionTitle>
+      <p className="text-sm text-ink-soft" dir="ltr" style={{ textAlign: 'right' }}>{profile?.email}</p>
+      <form
+        className="flex gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          try {
+            await updateName(name.trim())
+            celebrate({ size: 'small', mood: 'happy', title: 'انحفظ الاسم ✓' })
+          } catch (err) {
+            setMsg((err as Error).message)
+          }
+        }}
+      >
+        <label className="relative flex-1">
+          <UserRound size={18} className="pointer-events-none absolute inset-y-0 start-3 my-auto text-ink-faint" />
+          <input className="field ps-10" value={name} onChange={(e) => setName(e.target.value)} aria-label="الاسم" maxLength={60} />
+        </label>
+        <Button type="submit" variant="soft" disabled={!name.trim() || name.trim() === profile?.name}>احفظ</Button>
+      </form>
+      <form
+        className="flex gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          setMsg(null)
+          if (pw.length < 8) return setMsg('كلمة السر الجديدة لازم 8 أحرف على الأقل.')
+          const { error } = await supabase.auth.updateUser({ password: pw })
+          if (error) return setMsg(/different/i.test(error.message) ? 'هاي نفس كلمة السر القديمة.' : 'ما تغيّرت كلمة السر، جرّب كمان مرة.')
+          setPw('')
+          celebrate({ size: 'small', mood: 'happy', title: 'تغيّرت كلمة السر 🔑' })
+        }}
+      >
+        <label className="relative flex-1">
+          <KeyRound size={18} className="pointer-events-none absolute inset-y-0 start-3 my-auto text-ink-faint" />
+          <input className="field ps-10" type="password" autoComplete="new-password" placeholder="كلمة سر جديدة" value={pw} onChange={(e) => setPw(e.target.value)} aria-label="كلمة سر جديدة" />
+        </label>
+        <Button type="submit" variant="soft" disabled={!pw}>غيّر</Button>
+      </form>
+      {msg && <p className="rounded-2xl bg-peach px-3 py-2 text-sm" role="alert">{msg}</p>}
+      <Button variant="ghost" className="w-full text-[#8a3b22]" icon={<LogOut size={18} />} onClick={() => void signOut()}>
+        تسجيل الخروج
+      </Button>
+    </section>
   )
 }

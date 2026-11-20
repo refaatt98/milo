@@ -1,5 +1,4 @@
 import Dexie, { type EntityTable } from 'dexie'
-import { seedDatabase } from '../data/seed'
 
 export type PlantKind = 'tulip' | 'sunflower' | 'fern' | 'lavender' | 'cactus' | 'blossom'
 
@@ -153,7 +152,87 @@ export const DEFAULT_SETTINGS: Settings = {
   examDateTime: '2026-11-28T09:00',
 }
 
-class MiloDB extends Dexie {
+/* ---------- notebooks (MiloNote) ---------- */
+
+export type PaperKind = 'blank' | 'lined' | 'grid' | 'dots' | 'cornell'
+export type PenKind = 'ballpoint' | 'fountain' | 'marker' | 'pencil' | 'brush' | 'highlighter'
+
+export interface Stroke {
+  id: string
+  pen: PenKind
+  color: string
+  width: number
+  /** flat [x, y, pressure, x, y, pressure…] in page units (1000 × 1414) */
+  pts: number[]
+}
+
+export interface TextBox {
+  id: string
+  x: number
+  y: number
+  w: number
+  text: string
+  size: number
+  color: string
+}
+
+export interface StickerEl {
+  id: string
+  kind: string
+  x: number
+  y: number
+  s: number
+  r: number
+}
+
+export interface PageContent {
+  strokes: Stroke[]
+  texts: TextBox[]
+  stickers: StickerEl[]
+}
+
+export interface Notebook {
+  id: string
+  title: string
+  cover: string
+  paper: PaperKind
+  paperColor: string
+  order: number
+  createdAt: number
+  updatedAt: number
+  unitId?: string
+  /** password lock: AES-GCM key derived with PBKDF2 from the user's password */
+  lock?: { salt: string; check: string; iv: string }
+}
+
+export interface NotePage {
+  id: string
+  notebookId: string
+  order: number
+  paper?: PaperKind
+  content?: PageContent
+  /** when the notebook is locked the content is stored only encrypted */
+  enc?: { iv: string; data: string }
+  updatedAt: number
+}
+
+export interface AudioClip {
+  id: string
+  notebookId: string
+  pageId: string
+  title: string
+  durationMs: number
+  createdAt: number
+  mime: string
+  path?: string // storage path once uploaded
+}
+
+export interface AudioBlob {
+  id: string
+  blob: Blob
+}
+
+export class MiloDB extends Dexie {
   units!: EntityTable<Unit, 'id'>
   topics!: EntityTable<Topic, 'id'>
   days!: EntityTable<ChallengeDay, 'id'>
@@ -164,9 +243,13 @@ class MiloDB extends Dexie {
   mistakes!: EntityTable<Mistake, 'id'>
   checklist!: EntityTable<ChecklistItem, 'id'>
   kv!: EntityTable<KV, 'key'>
+  notebooks!: EntityTable<Notebook, 'id'>
+  pages!: EntityTable<NotePage, 'id'>
+  audio!: EntityTable<AudioClip, 'id'>
+  audioBlobs!: EntityTable<AudioBlob, 'id'>
 
-  constructor() {
-    super('milo-study')
+  constructor(name: string) {
+    super(name)
     this.version(1).stores({
       units: 'id, order',
       topics: 'id, unitId, order',
@@ -179,12 +262,29 @@ class MiloDB extends Dexie {
       checklist: 'id, order',
       kv: 'key',
     })
-    this.on('populate', (tx) => seedDatabase(tx))
+    this.version(2).stores({
+      notebooks: 'id, order, updatedAt',
+      pages: 'id, notebookId, order',
+      audio: 'id, notebookId, pageId, createdAt',
+      audioBlobs: 'id',
+    })
   }
 }
 
-export const db = new MiloDB()
+/**
+ * One local database per account. `db` is a live ES-module binding, so every
+ * importer sees the account's database after openUserDb() swaps it.
+ */
+export let db = new MiloDB('milonote-guest')
 
+export function openUserDb(userId: string) {
+  // always a fresh instance so sync hooks are attached exactly once
+  db.close()
+  db = new MiloDB(`milonote-${userId}`)
+  return db
+}
+
+/** Tables mirrored to the account in the cloud (audio blobs go to Storage instead). */
 export const TABLES = [
   'units',
   'topics',
@@ -196,7 +296,11 @@ export const TABLES = [
   'mistakes',
   'checklist',
   'kv',
+  'notebooks',
+  'pages',
+  'audio',
 ] as const
+export type SyncTable = (typeof TABLES)[number]
 
 export async function getSettings(): Promise<Settings> {
   const row = await db.kv.get('settings')
