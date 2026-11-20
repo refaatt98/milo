@@ -5,7 +5,6 @@ import Milo from '../character/Milo'
 import { Bubble } from '../ui/Bubble'
 import { Button } from '../ui/Button'
 import { Confirm } from '../ui/Confirm'
-import { Sheet } from '../ui/Sheet'
 import { useCelebrate } from '../ui/Celebration'
 import { TimerDial } from './TimerDial'
 import { useSettings, useTimer, useTopics, useUnits, useDays } from '../../hooks/useData'
@@ -15,9 +14,9 @@ import { finishTimer, pauseTimer, resetTimer, resumeTimer, startTimer, updateTim
 import { formatDuration, formatHMS } from '../../lib/time'
 import { miloLine } from '../../lib/messages'
 import { challengePhase, todayChallengeDay } from '../../lib/phase'
-import { toggleTopic } from '../../lib/actions'
 import { chime } from '../../lib/sound'
-import { db } from '../../lib/db'
+import type { StudySession } from '../../lib/db'
+import { SessionLessons } from './SessionLessons'
 
 export function StudyTimer() {
   const timer = useTimer('study')
@@ -31,7 +30,7 @@ export function StudyTimer() {
   const now = useNow(!!timer && timer.status !== 'paused', 500)
   const [busy, setBusy] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
-  const [doneTopic, setDoneTopic] = useState<string | null>(null)
+  const [finished, setFinished] = useState<StudySession | null>(null)
 
   const todayDay = todayChallengeDay(days, stats.today)
   const [unitId, setUnitId] = useState<string | undefined>(undefined)
@@ -109,8 +108,8 @@ export function StudyTimer() {
         title: `خلصت جلسة ${formatDuration(s.duration)} 🎉`,
         message: unit ? `انحسبت على ${unit.name}` : 'انحفظت بسجلّك',
       })
-      const topic = topics?.find((t) => t.id === s.topicId)
-      if (topic && !topic.done) setTimeout(() => setDoneTopic(topic.id), 900)
+      // always ask which lessons were finished in this session
+      setTimeout(() => setFinished(s), 700)
     })
 
   const unitName = (id?: string) => units?.find((u) => u.id === id)?.name ?? 'بدون وحدة'
@@ -277,26 +276,7 @@ export function StudyTimer() {
           await resetTimer('study')
         }}
       />
-      <Sheet open={!!doneTopic} onClose={() => setDoneTopic(null)} title="خلّصت الدرس؟">
-        <div className="flex items-center gap-4">
-          <Milo mood="encouraging" size={90} />
-          <p className="text-ink-soft">
-            درست «{topics?.find((t) => t.id === doneTopic)?.title}». إذا خلّصته، علّمه عشان تكبر نبتة الوحدة.
-          </p>
-        </div>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={() => setDoneTopic(null)}>لسا، بكمّله بعدين</Button>
-          <Button
-            onClick={async () => {
-              const id = doneTopic
-              setDoneTopic(null)
-              if (id && (await db.topics.get(id))) await toggleTopic(id, true, celebrate)
-            }}
-          >
-            آه، خلّصته ✓
-          </Button>
-        </div>
-      </Sheet>
+      <SessionLessons session={finished} onClose={() => setFinished(null)} />
     </div>
   )
 }

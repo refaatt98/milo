@@ -126,14 +126,32 @@ export function formatHMS(ms: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-/** "3س 20د" style */
+function arHours(h: number) {
+  if (h === 1) return 'ساعة'
+  if (h === 2) return 'ساعتين'
+  if (h <= 10) return `${h} ساعات`
+  return `${h} ساعة`
+}
+function arMinutes(m: number) {
+  if (m === 1) return 'دقيقة'
+  if (m === 2) return 'دقيقتين'
+  if (m <= 10) return `${m} دقايق`
+  return `${m} دقيقة`
+}
+
+/**
+ * "3 ساعات و39 دقيقة". Wrapped in Unicode right-to-left isolates so it reads
+ * correctly even inside left-to-right number styling (which used to scramble it).
+ */
 export function formatDuration(ms: number): string {
   const totalMin = Math.max(0, Math.floor(ms / 60000))
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
-  if (h === 0) return `${m} د`
-  if (m === 0) return `${h} س`
-  return `${h} س ${m} د`
+  let text: string
+  if (h === 0) text = m === 0 ? 'أقل من دقيقة' : arMinutes(m)
+  else if (m === 0) text = arHours(h)
+  else text = `${arHours(h)} و${arMinutes(m)}`
+  return `\u2067${text}\u2069`
 }
 
 export function hours(ms: number, digits = 1): string {

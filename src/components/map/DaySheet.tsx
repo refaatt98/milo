@@ -8,8 +8,8 @@ import { Check } from '../ui/Check'
 import { DestinationArt, DESTINATION_NAMES } from './Destinations'
 import { db, type ChallengeDay, type Destination } from '../../lib/db'
 import { useSessions, useTasksOn, useUnits, useUnitProgress, useTimers } from '../../hooks/useData'
-import { msOnDay, sessionsOnDay } from '../../lib/stats'
-import { formatClock, formatDayLong, formatDuration } from '../../lib/time'
+import { msByUnit, msOnDay, sessionsOnDay } from '../../lib/stats'
+import { dayKey, formatClock, formatDayLong, formatDuration } from '../../lib/time'
 import { useCelebrate } from '../ui/Celebration'
 import { checkChallenge } from '../../lib/actions'
 
@@ -32,6 +32,9 @@ function DayView({ day, onEdit }: { day: ChallengeDay; onEdit: () => void }) {
   const studied = msOnDay(sessions ?? [], day.date, timers ?? [])
   const daySessions = sessionsOnDay(sessions ?? [], day.date)
   const doneTasks = tasks?.filter((t) => t.done).length ?? 0
+  const byUnit = msByUnit(sessions ?? [], timers ?? [])
+  const unitMs = day.unitIds.reduce((a, id) => a + (byUnit.get(id) ?? 0), 0)
+  const crossesMidnight = daySessions.some((x) => dayKey(x.startedAt) !== dayKey(x.endedAt))
 
   return (
     <div className="space-y-5">
@@ -47,10 +50,19 @@ function DayView({ day, onEdit }: { day: ChallengeDay; onEdit: () => void }) {
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center">
-        <Stat label="وقت الدراسة" value={formatDuration(studied)} />
+        <Stat label="درست بهاليوم" value={formatDuration(studied)} />
         <Stat label="المهام" value={`${doneTasks}/${tasks?.length ?? 0}`} />
         <Stat label="الجلسات" value={String(daySessions.length)} />
       </div>
+
+      {day.unitIds.length > 0 && (
+        <p className="rounded-2xl bg-mint/60 px-3 py-2 text-sm">
+          كل وقتك على {day.unitIds.length > 1 ? 'وحدات هاليوم' : 'هالوحدة'}: <strong>{formatDuration(unitMs)}</strong>
+          {crossesMidnight && (
+            <span className="block text-xs text-ink-soft">جلسة كمّلت بعد نص الليل: الوقت بعد 12:00 بينحسب بهدف اليوم اللي بعده، بس بضل محسوب كامل على الوحدة.</span>
+          )}
+        </p>
+      )}
 
       <section>
         <h4 className="mb-2 font-bold">وحدات اليوم</h4>
@@ -62,7 +74,9 @@ function DayView({ day, onEdit }: { day: ChallengeDay; onEdit: () => void }) {
               <li key={id}>
                 <div className="mb-1 flex justify-between text-sm">
                   <span className="font-semibold">{p.unit.name}</span>
-                  <span className="num text-ink-soft">{p.done}/{p.total} · {p.percent}%</span>
+                  <span className="text-ink-soft">
+                    <span className="num">{p.done}/{p.total} · {p.percent}%</span> · {formatDuration(byUnit.get(id) ?? 0)}
+                  </span>
                 </div>
                 <ProgressBar value={p.percent} label={p.unit.name} />
               </li>
@@ -97,7 +111,9 @@ function DayView({ day, onEdit }: { day: ChallengeDay; onEdit: () => void }) {
             {daySessions.map((s) => (
               <li key={s.id} className="flex justify-between rounded-xl bg-mint/60 px-3 py-2">
                 <span>{s.kind === 'exam' ? 'امتحان تجريبي' : progress?.map.get(s.unitId ?? '')?.unit.name ?? 'دراسة'}</span>
-                <span className="num text-ink-soft">{formatClock(s.startedAt)}–{formatClock(s.endedAt)} · {formatDuration(s.duration)}</span>
+                <span className="text-ink-soft">
+                  <span className="num">{formatClock(s.startedAt)}</span> ← <span className="num">{formatClock(s.endedAt)}</span> · {formatDuration(s.duration)}
+                </span>
               </li>
             ))}
           </ul>

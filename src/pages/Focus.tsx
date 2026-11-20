@@ -6,7 +6,8 @@ import { Confirm } from '../components/ui/Confirm'
 import { useStudyStats } from '../hooks/useStudyStats'
 import { useTopics, useUnits } from '../hooks/useData'
 import { sessionsOnDay } from '../lib/stats'
-import { formatClock, formatDuration } from '../lib/time'
+import { dayKey, formatClock, formatDuration } from '../lib/time'
+import { SessionLessons } from '../components/timer/SessionLessons'
 import { db, type StudySession } from '../lib/db'
 
 export default function Focus() {
@@ -14,6 +15,7 @@ export default function Focus() {
   const units = useUnits()
   const topics = useTopics()
   const [del, setDel] = useState<StudySession | null>(null)
+  const [lessons, setLessons] = useState<StudySession | null>(null)
   const list = sessionsOnDay(stats.sessions, stats.today).slice().reverse()
 
   return (
@@ -38,11 +40,18 @@ export default function Focus() {
                     {units?.find((u) => u.id === s.unitId)?.name ?? (s.kind === 'exam' ? 'امتحان تجريبي' : 'دراسة عامة')}
                     {s.topicId && <span className="text-ink-soft"> · {topics?.find((t) => t.id === s.topicId)?.title}</span>}
                   </p>
-                  <p className="num text-xs text-ink-soft">
-                    {formatClock(s.startedAt)} – {formatClock(s.endedAt)}
+                  <p className="text-xs text-ink-soft">
+                    من <span className="num">{formatClock(s.startedAt)}</span> لـ <span className="num">{formatClock(s.endedAt)}</span>
+                    {dayKey(s.startedAt) !== dayKey(s.endedAt) && ' (كمّلت بعد نص الليل)'}
+                    {s.endedAt - s.startedAt - s.duration > 60e3 && <> · استراحات {formatDuration(s.endedAt - s.startedAt - s.duration)}</>}
                   </p>
+                  {s.kind === 'study' && (
+                    <button onClick={() => setLessons(s)} className="mt-1 rounded-full bg-mint/70 px-2.5 py-0.5 text-xs font-semibold text-sage-deep hover:bg-mint">
+                      {s.topicIds?.length ? `خلّصت ${s.topicIds.length === 1 ? 'درس' : `${s.topicIds.length} دروس`} ✓ · تعديل` : '+ علّم الدروس اللي خلّصتها'}
+                    </button>
+                  )}
                 </div>
-                <span className="num font-bold">{formatDuration(s.duration)}</span>
+                <span className="font-bold">{formatDuration(s.duration)}</span>
                 <button aria-label="احذف الجلسة" onClick={() => setDel(s)} className="grid size-10 place-items-center rounded-xl text-ink-faint hover:bg-peach hover:text-ink">
                   <Trash2 size={17} />
                 </button>
@@ -51,6 +60,7 @@ export default function Focus() {
           </ul>
         )}
       </section>
+      <SessionLessons session={lessons} onClose={() => setLessons(null)} />
       <Confirm
         open={!!del}
         title="نحذف الجلسة؟"

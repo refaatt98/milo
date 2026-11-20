@@ -78,6 +78,8 @@ export interface StudySession {
   unitId?: string
   topicId?: string
   examId?: string
+  /** lessons finished during this session */
+  topicIds?: string[]
 }
 
 export interface ActiveTimer {
