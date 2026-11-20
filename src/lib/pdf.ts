@@ -2,6 +2,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { db, type FileMeta, type Notebook, type NotePage, type PageBg, type PaperKind } from './db'
 import { uid } from './id'
 import { supabase } from './supabase'
+import { r2Delete, r2Download, r2Upload } from './r2'
 import { PAGE_H, PAGE_W } from './ink'
 import { EMPTY } from './notes'
 import { encryptJSON, unlockedKeys } from './crypto'
@@ -36,8 +37,13 @@ export function getFileBlob(fileId: string): Promise<Blob | null> {
       if (local) return local.blob
       const meta = await db.files.get(fileId)
       if (!meta?.path) return null
-      const { data, error } = await supabase.storage.from(BUCKET).download(meta.path)
-      if (error || !data) return null
+      let data: Blob | null = null
+      if (meta.store === 'r2') data = await r2Download(meta.path)
+      else {
+        const res = await supabase.storage.from(BUCKET).download(meta.path)
+        data = res.error ? null : res.data
+      }
+      if (!data) return null
       await db.fileBlobs.put({ id: fileId, blob: data })
       return data
     })()
@@ -125,19 +131,23 @@ export async function storeFile(file: File, notebookId: string, userId: string, 
   const ext = (file.name.split('.').pop() || (mime === 'application/pdf' ? 'pdf' : 'bin')).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
   // the storage path is fixed up front, so every device can find (or delete) the file
   // even before the upload's completion has synced
-  const meta: FileMeta = { id, notebookId, name: file.name, mime, size: file.size, pageCount, createdAt: Date.now(), path: `${userId}/${id}.${ext}` }
+  // photos go to Cloudflare R2; PDFs stay in Supabase Storage
+  const store: FileMeta['store'] = mime.startsWith('image/') ? 'r2' : 'supabase'
+  const meta: FileMeta = { id, notebookId, name: file.name, mime, size: file.size, pageCount, createdAt: Date.now(), path: `${userId}/${id}.${ext}`, store }
   await db.fileBlobs.put({ id, blob: file })
   await db.files.add(meta)
   // upload in the background; the file already works on this device
-  void uploadWithRetry(meta.path!, file, mime)
+  void uploadWithRetry(meta, file)
   return meta
 }
 
-async function uploadWithRetry(path: string, blob: Blob, mime: string, attempt = 0): Promise<void> {
-  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: mime, upsert: true })
-  if (error && attempt < 4) {
+async function uploadWithRetry(meta: FileMeta, blob: Blob, attempt = 0): Promise<void> {
+  let ok = false
+  if (meta.store === 'r2') ok = await r2Upload(meta.path!, blob, meta.mime).then(() => true, () => false)
+  else ok = !(await supabase.storage.from(BUCKET).upload(meta.path!, blob, { contentType: meta.mime, upsert: true })).error
+  if (!ok && attempt < 4) {
     await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)))
-    return uploadWithRetry(path, blob, mime, attempt + 1)
+    return uploadWithRetry(meta, blob, attempt + 1)
   }
 }
 
@@ -200,7 +210,7 @@ export async function insertFile(nb: Notebook, file: File, afterOrder: number, u
       throw new Error('ما قدرنا نقرأ ملف الـ PDF.')
     }
   } else if (!file.type.startsWith('image/')) throw new Error('بس ملفات PDF أو صور.')
-  const meta = await storeFile(file, nb.id, userId, isPdf ? count : undefined)
+  const meta = isPdf ? await storeFile(file, nb.id, userId, count) : await db.files.get((await storePageImage(file, nb.id, userId)).fileId).then((m) => m!)
   const key = unlockedKeys.get(nb.id)
   const empty = nb.lock && key ? { enc: await encryptJSON(key, EMPTY) } : { content: EMPTY }
   const now = Date.now()
@@ -230,8 +240,10 @@ export async function removeNotebookFiles(notebookId: string) {
     docs.delete(f.id)
     blobs.delete(f.id)
   }
-  const paths = files.map((f) => f.path).filter(Boolean) as string[]
-  if (paths.length) void supabase.storage.from(BUCKET).remove(paths)
+  const inR2 = files.filter((f) => f.store === 'r2' && f.path).map((f) => f.path!)
+  const inSupabase = files.filter((f) => f.store !== 'r2' && f.path).map((f) => f.path!)
+  if (inR2.length) void r2Delete(inR2)
+  if (inSupabase.length) void supabase.storage.from(BUCKET).remove(inSupabase)
 }
 
 /** Raw bytes of an imported PDF (for exporting annotations onto it). */
@@ -258,7 +270,8 @@ export async function storePageImage(file: File, notebookId: string, userId: str
   const h = Math.max(1, Math.round(bitmap.height * k))
   let out: File = file
   const keepPng = file.type === 'image/png' && file.size < 1.5 * 1024 * 1024 // screenshots/diagrams with transparency
-  if (k < 1 || (!keepPng && file.size > 1.5 * 1024 * 1024) || file.type === 'image/heic') {
+  const webSafe = /^image\/(jpeg|png|webp|gif)$/.test(file.type)
+  if (k < 1 || (!keepPng && file.size > 1.5 * 1024 * 1024) || !webSafe) {
     const c = document.createElement('canvas')
     c.width = w
     c.height = h

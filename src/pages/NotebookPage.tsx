@@ -137,6 +137,12 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   const [content, setContent] = useState<PageContent | null>(null)
   const contentRef = useRef<PageContent | null>(null)
   contentRef.current = content
+  const isLastPage = useRef(false)
+  isLastPage.current = idx === pages.length - 1
+  const pageIdx = useRef(idx)
+  pageIdx.current = idx
+  const autoPaging = useRef(false)
+  const [hint, setHint] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [reading, setReading] = useState(false)
@@ -155,31 +161,36 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
     const c = pending.current
     if (!c || !page) return
     pending.current = null
-    lastWrite.current = Date.now()
+    lastWrite.current = Date.now() + 2000 // our own save echoing back is not a "remote" change
     await writeContent(nb, page.id, c)
   }, [nb, page])
 
-  // load page content (and reload when another device changed it)
-  useEffect(() => {
-    if (!page) return
-    if (pending.current) return
-    if (page.updatedAt <= lastWrite.current && content) return
-    let alive = true
-    void readContent(nb, page).then((c) => alive && setContent(c))
-    return () => {
-      alive = false
-    }
-  }, [page?.id, page?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // switching pages: save, reset history
+  // switching pages: save the old one, reset history, always load the new one
   useEffect(() => {
     undo.current = []
     redo.current = []
     setSelected(null)
     setContent(null)
     lastWrite.current = 0
-    return () => void flush()
+    if (!page) return
+    let alive = true
+    void readContent(nb, page).then((c) => alive && setContent(c))
+    return () => {
+      alive = false
+      void flush()
+    }
   }, [page?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // same page changed on another device → reload it (unless we have unsaved edits)
+  useEffect(() => {
+    if (!page || !content) return
+    if (pending.current || page.updatedAt <= lastWrite.current) return
+    let alive = true
+    void readContent(nb, page).then((c) => alive && setContent(c))
+    return () => {
+      alive = false
+    }
+  }, [page?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onHide = () => void flush()
@@ -204,8 +215,19 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
       pending.current = c
       clearTimeout(saveTimer.current)
       saveTimer.current = window.setTimeout(() => void flush(), 600)
+      // the moment you start on the last page, the next blank page is created and waiting
+      if (record && isLastPage.current && !hasContent(contentRef.current) && hasContent(c) && !autoPaging.current) {
+        autoPaging.current = true
+        void addPage(nb, pageIdx.current)
+          .then(() => {
+            setHint('صفحة جديدة جاهزة بعدها ←')
+            setTimeout(() => setHint(null), 2200)
+          })
+          .catch(() => {})
+          .finally(() => (autoPaging.current = false))
+      }
     },
-    [flush],
+    [flush, nb],
   )
 
   const doUndo = () => {
@@ -525,6 +547,11 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
           if (f) void insert(f)
         }}
       />
+      {hint && !busyMsg && !fileErr && (
+        <div className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4" style={{ bottom: 'calc(var(--safe-bottom) + 70px)' }}>
+          <div className="rounded-full bg-sage px-4 py-2 text-sm font-semibold text-white shadow-lg" role="status">{hint}</div>
+        </div>
+      )}
       {(busyMsg || fileErr) && (
         <div className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4" style={{ bottom: 'calc(var(--safe-bottom) + 70px)' }}>
           <div className={`pointer-events-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-lg ${fileErr ? 'bg-peach' : 'bg-ink text-white'}`} role="status">
@@ -772,4 +799,8 @@ function TranslatePanel({ initial, onInsert }: { initial: string; onInsert: (t: 
       )}
     </div>
   )
+}
+
+function hasContent(c: PageContent | null | undefined) {
+  return !!c && c.strokes.length + c.texts.filter((t) => t.text.trim()).length + c.stickers.length + (c.images?.length ?? 0) > 0
 }

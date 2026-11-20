@@ -18,7 +18,15 @@ The interface is in Palestinian Arabic (RTL) and mobile-first. Data is local-fir
 **Translation:** the «ترجمة» tool translates typed text or a selected text box (auto-detected language → Arabic, English, French, …) and can drop the result onto the page. It uses the free MyMemory service (no key, about 5000 characters a day); the text is sent to that service.
 
 
-Unlimited notebooks and pages · 6 pens (ballpoint, fountain with nib angle, pencil with grain, marker, pressure brush, highlighter) with Apple Pencil pressure · any colour · writing stabilizer · ruler with 15° snapping · stroke eraser · text boxes · stickers (Milo, plants, labels) · 5 paper types and paper colours · 10 original covers · voice notes per page (uploaded to Storage) · password lock with real AES-256-GCM encryption (the password never leaves the device) · paper-scratch writing sound (ASMR) · reading mode · PNG export · undo/redo · stylus-only mode (palm rejection).
+Unlimited notebooks and pages (writing on the last page automatically adds a fresh page after it) · photos inside pages (button, drag-and-drop or paste; move, resize, rotate) · 6 pens (ballpoint, fountain with nib angle, pencil with grain, marker, pressure brush, highlighter) with Apple Pencil pressure · any colour · writing stabilizer · ruler with 15° snapping · stroke eraser · text boxes · stickers (Milo, plants, labels) · 5 paper types and paper colours · 10 original covers · voice notes per page (uploaded to Storage) · password lock with real AES-256-GCM encryption (the password never leaves the device) · paper-scratch writing sound (ASMR) · reading mode · PNG export · undo/redo · stylus-only mode (palm rejection).
+
+## Photos on Cloudflare R2
+
+Photos (placed on pages or inserted as pages) are stored in the Cloudflare R2 bucket `milonote`. PDFs and voice notes stay in Supabase Storage. The R2 keys are **never** in the app. They are Supabase Edge Function secrets (`MILONOTE_R2_ACCESS_KEY_ID`, `MILONOTE_R2_SECRET_ACCESS_KEY`, `MILONOTE_R2_ENDPOINT`, `MILONOTE_R2_BUCKET`). The `milonote-r2` function checks the user's login and returns 10-minute upload / 1-hour download URLs, only for that user's own folder (`<user-id>/<file-id>.<ext>`). Uploads are limited to images of 25 MB or less.
+
+The bucket's CORS policy (already applied) is in `supabase/r2-cors.json`. To set it yourself: Cloudflare → R2 → milonote → Settings → CORS Policy → paste the file's contents.
+
+To rotate the keys: create a new R2 API token, then update the two `MILONOTE_R2_*_KEY*` secrets in Supabase → Edge Functions → Secrets. No redeploy is needed.
 
 ## Supabase
 

@@ -231,6 +231,8 @@ export interface FileMeta {
   pageCount?: number
   createdAt: number
   path?: string // storage path once uploaded
+  /** where the bytes live: Cloudflare R2 (photos) or Supabase Storage (PDFs, older files) */
+  store?: 'r2' | 'supabase'
 }
 
 export interface FileBlob {

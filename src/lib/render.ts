@@ -136,9 +136,18 @@ export async function exportNotebookPdf(nb: Notebook, pages: NotePage[], onProgr
   const sources = new Map<string, Awaited<ReturnType<typeof PDFDocument.load>> | null>()
   const A4 = { w: 595.28, h: 841.89 }
 
+  const contents = await Promise.all(pages.map((p) => readContent(nb, p).catch(() => null)))
+  const empty = (i: number) => {
+    const c = contents[i]
+    return !pages[i].bg && (!c || c.strokes.length + c.texts.length + c.stickers.length + (c.images?.length ?? 0) === 0)
+  }
+  // leave out the blank page(s) waiting at the end of the notebook
+  let last = pages.length - 1
+  while (last > 0 && empty(last)) last--
+  pages = pages.slice(0, last + 1)
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i]
-    const content = (await readContent(nb, p)) ?? { strokes: [], texts: [], stickers: [] }
+    const content = contents[i] ?? { strokes: [], texts: [], stickers: [] }
     const hasInk = content.strokes.length + content.texts.length + content.stickers.length + (content.images?.length ?? 0) > 0
     if (p.bg?.kind === 'pdf') {
       if (!sources.has(p.bg.fileId)) {
