@@ -13,6 +13,8 @@ import { db, type Exam } from '../../lib/db'
 import { uid } from '../../lib/id'
 import { formatDuration, formatHMS } from '../../lib/time'
 import { chime } from '../../lib/sound'
+import { NumberField } from '../ui/NumberField'
+import { asciiDigits, parseNum } from '../../lib/num'
 
 const PRESETS = [45, 60, 90, 120, 180]
 
@@ -112,15 +114,7 @@ export function ExamTimer() {
                     {m}
                   </button>
                 ))}
-                <input
-                  type="number"
-                  min={5}
-                  max={480}
-                  value={minutes}
-                  onChange={(e) => setMinutes(Math.max(5, Math.min(480, Number(e.target.value) || 5)))}
-                  className="field num min-h-10 w-24 py-1"
-                  aria-label="مدة مخصصة"
-                />
+                <NumberField label="مدة مخصصة بالدقائق" min={5} max={480} value={minutes} onChange={setMinutes} className="min-h-10 w-24 py-1" />
               </div>
             </fieldset>
             <Button size="lg" className="w-full" onClick={start} disabled={busy} icon={<Play size={20} fill="currentColor" />}>
@@ -199,8 +193,8 @@ export function ScoreSheet({ exam, onClose, onSaved }: { exam: Exam | null; onCl
           className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault()
-            const sc = Number(score)
-            const mx = Number(max) || 100
+            const sc = parseNum(score)
+            const mx = parseNum(max) || 100
             if (!Number.isFinite(sc)) return
             await db.exams.update(exam.id, { score: sc, maxScore: mx, notes, status: 'done', endedAt: exam.endedAt ?? Date.now() })
             setScore('')
@@ -216,11 +210,11 @@ export function ScoreSheet({ exam, onClose, onSaved }: { exam: Exam | null; onCl
           <div className="grid grid-cols-2 gap-3">
             <label>
               <span className="mb-1 block text-sm font-semibold">علامتك</span>
-              <input type="number" inputMode="decimal" step="any" min={0} className="field num" value={score} onChange={(e) => setScore(e.target.value)} required autoFocus />
+              <input type="text" inputMode="decimal" dir="ltr" className="field num" value={score} onChange={(e) => setScore(asciiDigits(e.target.value))} required autoFocus />
             </label>
             <label>
               <span className="mb-1 block text-sm font-semibold">من</span>
-              <input type="number" inputMode="decimal" step="any" min={1} className="field num" value={max} onChange={(e) => setMax(e.target.value)} required />
+              <input type="text" inputMode="decimal" dir="ltr" className="field num" value={max} onChange={(e) => setMax(asciiDigits(e.target.value))} required />
             </label>
           </div>
           <label className="block">

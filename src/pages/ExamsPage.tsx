@@ -11,6 +11,7 @@ import { Countdown } from './Today'
 import { useChecklist, useDays, useExams, useMistakes, useSettings, useToday, useTopics, useUnits } from '../hooks/useData'
 import { db, saveSettings, type Exam } from '../lib/db'
 import { uid } from '../lib/id'
+import { asciiDigits, parseNum } from '../lib/num'
 import { challengePhase } from '../lib/phase'
 import { formatDayShort, formatDuration, localTimeOn } from '../lib/time'
 
@@ -140,15 +141,16 @@ function ManualExam({ open, onClose, today }: { open: boolean; onClose: () => vo
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault()
-          await db.exams.add({ id: uid(), title: title.trim() || 'امتحان', date, unitIds: [], plannedMinutes: 0, score: Number(score), maxScore: Number(max) || 100, notes: '', status: 'done', endedAt: Date.now() })
+          if (Number.isNaN(parseNum(score))) return
+          await db.exams.add({ id: uid(), title: title.trim() || 'امتحان', date, unitIds: [], plannedMinutes: 0, score: parseNum(score), maxScore: parseNum(max) || 100, notes: '', status: 'done', endedAt: Date.now() })
           setScore('')
           onClose()
         }}
       >
         <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="اسم الامتحان" />
         <div className="grid grid-cols-3 gap-3">
-          <input type="number" step="any" className="field num" placeholder="العلامة" value={score} onChange={(e) => setScore(e.target.value)} required aria-label="العلامة" />
-          <input type="number" step="any" className="field num" value={max} onChange={(e) => setMax(e.target.value)} aria-label="من" />
+          <input type="text" inputMode="decimal" dir="ltr" className="field num" placeholder="العلامة" value={score} onChange={(e) => setScore(asciiDigits(e.target.value))} required aria-label="العلامة" />
+          <input type="text" inputMode="decimal" dir="ltr" className="field num" value={max} onChange={(e) => setMax(asciiDigits(e.target.value))} aria-label="من" />
           <input type="date" className="field num" value={date} onChange={(e) => setDate(e.target.value)} aria-label="التاريخ" />
         </div>
         <Button type="submit" className="w-full" disabled={score === ''}>احفظ</Button>

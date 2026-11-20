@@ -6,6 +6,7 @@ import Milo from '../components/character/Milo'
 import { PageHeader, SectionTitle } from '../components/ui/PageHeader'
 import { Button } from '../components/ui/Button'
 import { Confirm } from '../components/ui/Confirm'
+import { Sheet } from '../components/ui/Sheet'
 import { DaySheet } from '../components/map/DaySheet'
 import { useCelebrate } from '../components/ui/Celebration'
 import { useDays, useSettings, useToday, useTopics, useUnits } from '../hooks/useData'
@@ -13,14 +14,61 @@ import { db, saveSettings, type ChallengeDay, type Destination, type PlantKind, 
 import { uid } from '../lib/id'
 import { addDays, formatDayShort, weekdayName } from '../lib/time'
 import { buildTasksForDay } from '../data/seed'
+import { NumberField } from '../components/ui/NumberField'
+
+const lessonList = (u?: UnitDraft) => (u?.lessons ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+
+function UnitRow({ name, info, onName, onInfo, onRemove }: { name: string; info: UnitDraft; onName: (v: string) => void; onInfo: (v: UnitDraft) => void; onRemove: () => void }) {
+  const [open, setOpen] = useState(false)
+  const named = lessonList(info)
+  return (
+    <li className="rounded-2xl bg-paper p-3 ring-1 ring-line">
+      <div className="flex flex-wrap items-center gap-2">
+        <input className="field min-h-10 flex-1 py-1 font-semibold" value={name} onChange={(e) => onName(e.target.value)} aria-label="اسم الوحدة" style={{ minWidth: 140 }} />
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-ink-soft">دروس</span>
+          {named.length ? (
+            <span className="num grid h-10 min-w-16 place-items-center rounded-xl bg-white px-3 font-bold ring-1 ring-line" title="العدد من أسماء الدروس">
+              {named.length}
+            </span>
+          ) : (
+            <NumberField label={`عدد دروس ${name}`} min={0} max={60} value={info.count} onChange={(v) => onInfo({ ...info, count: v })} stepper />
+          )}
+        </div>
+        <button aria-label={`احذف ${name}`} className="grid size-10 place-items-center rounded-xl text-ink-faint hover:bg-peach" onClick={onRemove}>
+          <X size={16} />
+        </button>
+      </div>
+      <button type="button" onClick={() => setOpen(!open)} className="mt-2 text-sm font-semibold text-sage" aria-expanded={open}>
+        {open ? 'خبّي أسماء الدروس' : named.length ? `أسماء الدروس (${named.length}) ✎` : '+ اكتب أسماء الدروس (اختياري)'}
+      </button>
+      {open && (
+        <textarea
+          className="field mt-2 min-h-28"
+          dir="auto"
+          value={info.lessons}
+          onChange={(e) => onInfo({ ...info, lessons: e.target.value })}
+          placeholder={'كل درس بسطر، مثلًا:\nالخلية وتركيبها\nالانقسام المتساوي\nالانقسام المنصّف'}
+          aria-label={`أسماء دروس ${name}`}
+        />
+      )}
+    </li>
+  )
+}
 
 const PLANTS: PlantKind[] = ['tulip', 'sunflower', 'fern', 'lavender', 'cactus', 'blossom']
 const STUDY_DEST: Destination[] = ['desk', 'garden', 'library', 'hill', 'cottage']
 const EXAM_DEST: Destination[] = ['station', 'workshop', 'checkpoint']
 
+interface UnitDraft {
+  count: number
+  /** optional real lesson names, one per line — when given, they decide the count */
+  lessons: string
+}
+
 interface Draft {
   units: string[]
-  topicsPer: number
+  unitInfo: UnitDraft[]
   start: string
   studyDays: number
   examDays: number
@@ -80,20 +128,27 @@ function Wizard() {
   const celebrate = useCelebrate()
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
-  const [d, setD] = useState<Draft>({ units: [], topicsPer: 4, start: today, studyDays: 5, examDays: 4, goal: 9, template: true })
+  const [d, setD] = useState<Draft>({ units: [], unitInfo: [], start: today, studyDays: 5, examDays: 4, goal: 9, template: true })
   const preview = useMemo(() => draftDays(d), [d])
   const [busy, setBusy] = useState(false)
 
   const addUnit = () => {
     const n = name.trim() || `الوحدة ${d.units.length + 1}`
-    setD({ ...d, units: [...d.units, n] })
+    // a new unit starts with the same lesson count as the previous one
+    const last = d.unitInfo[d.unitInfo.length - 1]
+    setD({ ...d, units: [...d.units, n], unitInfo: [...d.unitInfo, { count: last ? lessonList(last).length || last.count : 4, lessons: '' }] })
     setName('')
   }
 
   const create = async () => {
     setBusy(true)
     const unitRows: Unit[] = d.units.map((n, i) => ({ id: uid(), name: n, order: i, plant: PLANTS[i % PLANTS.length], manualProgress: 0 }))
-    const topicRows = unitRows.flatMap((u) => Array.from({ length: d.topicsPer }, (_, t) => ({ id: uid(), unitId: u.id, title: `الدرس ${t + 1}`, order: t, done: false })))
+    const topicRows = unitRows.flatMap((u, i) => {
+      const info = d.unitInfo[i]
+      const names = lessonList(info)
+      const titles = names.length ? names : Array.from({ length: info.count }, (_, t) => `الدرس ${t + 1}`)
+      return titles.map((title, t) => ({ id: uid(), unitId: u.id, title, order: t, done: false }))
+    })
     const dayRows: ChallengeDay[] = preview.map((p, i) => ({
       id: uid(),
       order: i,
@@ -150,24 +205,24 @@ function Wizard() {
                   <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder={`مثلًا: الوحدة ${d.units.length + 1} أو «الكيمياء العضوية»`} aria-label="اسم الوحدة" />
                   <Button type="submit" variant="soft" icon={<Plus size={18} />}>ضيف</Button>
                 </form>
-                <ul className="flex flex-wrap gap-2">
+                <ul className="space-y-2">
                   {d.units.map((u, i) => (
-                    <li key={i} className="flex items-center gap-1 rounded-full bg-mint py-1 ps-3 pe-1 font-semibold">
-                      {u}
-                      <button aria-label={`احذف ${u}`} className="grid size-8 place-items-center rounded-full hover:bg-white" onClick={() => setD({ ...d, units: d.units.filter((_, k) => k !== i) })}>
-                        <X size={14} />
-                      </button>
-                    </li>
+                    <UnitRow
+                      key={i}
+                      name={u}
+                      info={d.unitInfo[i]}
+                      onName={(v) => setD({ ...d, units: d.units.map((x, k) => (k === i ? v : x)) })}
+                      onInfo={(v) => setD({ ...d, unitInfo: d.unitInfo.map((x, k) => (k === i ? v : x)) })}
+                      onRemove={() => setD({ ...d, units: d.units.filter((_, k) => k !== i), unitInfo: d.unitInfo.filter((_, k) => k !== i) })}
+                    />
                   ))}
                   {!d.units.length && <li className="text-sm text-ink-soft">لسا ما ضفت ولا وحدة. كل وحدة رح تصير نبتة بالحديقة 🌱</li>}
                 </ul>
-                <label className="flex items-center justify-between gap-3 rounded-2xl bg-paper px-4 py-3 ring-1 ring-line">
-                  <span>
-                    <span className="block font-semibold">كم درس بكل وحدة؟</span>
-                    <span className="text-xs text-ink-soft">بنعمل دروس بأسماء مؤقتة، وبتغيّرها من الحديقة</span>
-                  </span>
-                  <input type="number" min={0} max={30} className="field num w-20" value={d.topicsPer} onChange={(e) => setD({ ...d, topicsPer: Math.max(0, Math.min(30, Number(e.target.value) || 0)) })} />
-                </label>
+                {d.units.length > 0 && (
+                  <p className="text-xs text-ink-soft">
+                    المجموع: <span className="num font-bold">{d.unitInfo.reduce((a, x) => a + (lessonList(x).length || x.count), 0)}</span> درس · بتقدر تعدّل الدروس بعدين من الحديقة
+                  </p>
+                )}
               </div>
             )}
             {step === 1 && (
@@ -180,11 +235,11 @@ function Wizard() {
                   </label>
                   <label>
                     <span className="mb-1 block text-sm font-semibold">أيام دراسة</span>
-                    <input type="number" min={0} max={60} className="field num" value={d.studyDays} onChange={(e) => setD({ ...d, studyDays: Math.max(0, Math.min(60, Number(e.target.value) || 0)) })} />
+                    <NumberField label="أيام دراسة" min={0} max={60} value={d.studyDays} onChange={(v) => setD({ ...d, studyDays: v })} stepper />
                   </label>
                   <label>
                     <span className="mb-1 block text-sm font-semibold">أيام تحضير امتحانات</span>
-                    <input type="number" min={0} max={30} className="field num" value={d.examDays} onChange={(e) => setD({ ...d, examDays: Math.max(0, Math.min(30, Number(e.target.value) || 0)) })} />
+                    <NumberField label="أيام تحضير امتحانات" min={0} max={30} value={d.examDays} onChange={(v) => setD({ ...d, examDays: v })} stepper />
                   </label>
                 </div>
                 <p className="text-sm text-ink-soft">هيك رح تكون خريطتك (بتقدر تعدّل أي يوم بعدين):</p>
@@ -259,6 +314,18 @@ function Manage({ units, days }: { units: Unit[]; days: ChallengeDay[] }) {
   const [delDay, setDelDay] = useState<ChallengeDay | null>(null)
   const [editDay, setEditDay] = useState<string | null>(null)
   const [wipe, setWipe] = useState(false)
+  const [bulk, setBulk] = useState<Unit | null>(null)
+  const [bulkText, setBulkText] = useState('')
+
+  const addLessons = async () => {
+    if (!bulk) return
+    const names = bulkText.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (!names.length) return
+    const existing = topics?.filter((t) => t.unitId === bulk.id) ?? []
+    const start = existing.length ? Math.max(...existing.map((t) => t.order)) + 1 : 0
+    await db.topics.bulkAdd(names.map((title, i) => ({ id: uid(), unitId: bulk.id, title, order: start + i, done: false })))
+    setBulk(null)
+  }
 
   const addUnit = async () => {
     const n = newUnit.trim()
@@ -322,7 +389,9 @@ function Manage({ units, days }: { units: Unit[]; days: ChallengeDay[] }) {
                 ) : (
                   <>
                     <span className="flex-1 font-semibold">{u.name}</span>
-                    <span className="num text-xs text-ink-soft">{n} دروس</span>
+                    <button onClick={() => { setBulk(u); setBulkText('') }} className="min-h-10 rounded-xl px-2 text-xs font-semibold text-sage hover:bg-mint" aria-label={`ضيف دروس لـ ${u.name}`}>
+                      <span className="num">{n}</span> دروس · + ضيف
+                    </button>
                     <button aria-label={`تعديل ${u.name}`} onClick={() => { setRenaming(u.id); setRenameText(u.name) }} className="grid size-10 place-items-center rounded-xl text-ink-faint hover:bg-paper">
                       <Pencil size={16} />
                     </button>
@@ -380,6 +449,23 @@ function Manage({ units, days }: { units: Unit[]; days: ChallengeDay[] }) {
       </section>
       <p className="text-xs text-ink-faint">هدف اليوم الحالي: {settings.dailyGoalHours} ساعات (بتغيّره من الإعدادات).</p>
 
+      <Sheet open={!!bulk} onClose={() => setBulk(null)} title={`دروس ${bulk?.name ?? ''}`}>
+        <div className="space-y-3">
+          {topics && bulk && (
+            <ol className="max-h-40 list-inside list-decimal overflow-y-auto rounded-2xl bg-paper px-3 py-2 text-sm ring-1 ring-line">
+              {topics.filter((t) => t.unitId === bulk.id).map((t) => (
+                <li key={t.id} className={t.done ? 'text-ink-faint line-through' : ''}>{t.title}</li>
+              ))}
+              {!topics.some((t) => t.unitId === bulk.id) && <li className="list-none text-ink-soft">ما في دروس لسا.</li>}
+            </ol>
+          )}
+          <textarea className="field min-h-32" dir="auto" value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={'ضيف دروس جديدة — كل درس بسطر'} aria-label="دروس جديدة" autoFocus />
+          <Button className="w-full" onClick={addLessons} disabled={!bulkText.trim()} icon={<Plus size={18} />}>
+            ضيف {bulkText.split('\n').filter((l) => l.trim()).length || ''} دروس
+          </Button>
+          <p className="text-xs text-ink-soft">لتعديل أو حذف درس، افتح الوحدة من صفحة الحديقة والوحدات.</p>
+        </div>
+      </Sheet>
       <DaySheet day={days.find((d) => d.id === editDay) ?? null} index={days.findIndex((d) => d.id === editDay)} onClose={() => setEditDay(null)} />
       <Confirm
         open={!!delUnit}
