@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Minus, Plus, RotateCw, Trash2 } from 'lucide-react'
 import type { ImageEl, PageBg, PageContent, PaperKind, PenKind, Stroke, TextBox } from '../../lib/db'
 import { PageImage } from './PageImage'
@@ -39,8 +39,24 @@ interface Props {
 
 const DPR = () => Math.min(2, window.devicePixelRatio || 1)
 
-/** Once an Apple Pencil / stylus is used, fingers and palms stop drawing (like Apple Notes). */
+/** Once an Apple Pencil / stylus is used, fingers and palms stop drawing (like Apple Notes)
+ * and scroll the pages instead. Shared by every page on screen. */
 let penSeen = false
+const penListeners = new Set<() => void>()
+function markPen() {
+  if (penSeen) return
+  penSeen = true
+  penListeners.forEach((l) => l())
+}
+function usePenSeen() {
+  return useSyncExternalStore(
+    (cb) => {
+      penListeners.add(cb)
+      return () => void penListeners.delete(cb)
+    },
+    () => penSeen,
+  )
+}
 
 export function PageCanvas({ content, paper, paperColor, bg, width, tools, readOnly, onChange, selected = null, onSelect, onDropFiles }: Props) {
   const paperRef = useRef<HTMLCanvasElement>(null)
@@ -128,28 +144,67 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
   }, [scale, tools?.ruler])
 
   const commit = (c: PageContent) => onChange?.(c)
+  const renderLiveRef = useRef(renderLive)
+  renderLiveRef.current = renderLive
 
-  // iOS Safari holds back the first part of a Pencil stroke while it decides whether the
-  // touch is a scroll/gesture. Cancelling the touch events (non-passive) makes it deliver
-  // pointer events immediately, so strokes start exactly where the pen lands.
+  // Touch handling on the writing area:
+  //  • Pencil/stylus: cancel the touch so iOS Safari delivers the stroke at once (no gap at the start)
+  //  • fingers, once a Pencil has been used (or "stylus only" is on): let them scroll the pages
+  //  • fingers when they draw (phones): two fingers scroll the pages instead of drawing
   const drawingTool = !readOnly && !!tools && tools.tool !== 'hand'
+  const pen = usePenSeen()
+  const fingersDraw = drawingTool && !(tools?.pencilOnly || pen)
   useEffect(() => {
     const el = liveRef.current
     if (!el || !drawingTool) return
-    const stop = (e: TouchEvent) => {
+    let last: { x: number; y: number } | null = null
+    const mid = (t: TouchList) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 })
+    const onStart = (e: TouchEvent) => {
+      const stylus = [...e.touches].some((t) => (t as Touch & { touchType?: string }).touchType === 'stylus')
+      if (stylus) {
+        if (e.cancelable) e.preventDefault()
+        return
+      }
+      if (!fingersDraw) return // native scrolling
       if (e.cancelable) e.preventDefault()
+      if (e.touches.length >= 2) {
+        // second finger: this is a scroll, not a stroke
+        if (drawing.current?.type === 'touch') {
+          drawing.current = null
+          renderLiveRef.current()
+        }
+        last = mid(e.touches)
+      }
     }
-    el.addEventListener('touchstart', stop, { passive: false })
-    el.addEventListener('touchmove', stop, { passive: false })
+    const onMove = (e: TouchEvent) => {
+      const stylus = [...e.touches].some((t) => (t as Touch & { touchType?: string }).touchType === 'stylus')
+      if (stylus || fingersDraw) {
+        if (e.cancelable) e.preventDefault()
+      }
+      if (fingersDraw && e.touches.length >= 2 && last) {
+        const m = mid(e.touches)
+        el.closest('[data-scroller]')?.scrollBy(last.x - m.x, last.y - m.y)
+        last = m
+      }
+    }
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) last = null
+    }
+    el.addEventListener('touchstart', onStart, { passive: false })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    el.addEventListener('touchend', onEnd)
+    el.addEventListener('touchcancel', onEnd)
     return () => {
-      el.removeEventListener('touchstart', stop)
-      el.removeEventListener('touchmove', stop)
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+      el.removeEventListener('touchcancel', onEnd)
     }
-  }, [drawingTool])
+  }, [drawingTool, fingersDraw])
 
   const down = (e: RPointerEvent<HTMLCanvasElement>) => {
     if (readOnly || !tools) return
-    if (e.pointerType === 'pen') penSeen = true
+    if (e.pointerType === 'pen') markPen()
     // palm rejection: a resting hand must never draw or interrupt the pen
     if ((tools.pencilOnly || penSeen) && e.pointerType === 'touch' && tools.tool !== 'text') return
     if (e.button > 0) return
@@ -399,7 +454,7 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
       <canvas
         ref={liveRef}
         className="absolute inset-0 size-full"
-        style={{ touchAction: canvasActive ? 'none' : 'auto', pointerEvents: canvasActive ? 'auto' : 'none', cursor: tools?.tool === 'eraser' ? 'cell' : tools?.tool === 'text' ? 'text' : 'crosshair' }}
+        style={{ touchAction: canvasActive ? (fingersDraw ? 'none' : 'pan-x pan-y') : 'auto', pointerEvents: canvasActive ? 'auto' : 'none', cursor: tools?.tool === 'eraser' ? 'cell' : tools?.tool === 'text' ? 'text' : 'crosshair' }}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}

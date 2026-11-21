@@ -2,8 +2,6 @@ import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowRight,
   BookOpenText,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Eraser,
   FilePlus2,
@@ -35,6 +33,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PageCanvas, type ToolState } from '../components/notes/PageCanvas'
+import { PageEditor, type PageHandle } from '../components/notes/PageEditor'
 import { STICKERS, STICKER_IDS } from '../components/notes/stickers'
 import { Button } from '../components/ui/Button'
 import { Confirm } from '../components/ui/Confirm'
@@ -43,7 +42,7 @@ import { INK_COLORS, PAGE_H, PAGE_W, PAPERS, PAPER_COLORS, PENS, r1 } from '../l
 import { renderPage, exportNotebookPdf } from '../lib/render'
 import { insertFile, storePageImage } from '../lib/pdf'
 import { LANGS, translate } from '../lib/translate'
-import { addPage, clipUrl, deletePage, readContent, removeClip, saveClip, unlockNotebook, writeContent } from '../lib/notes'
+import { addPage, clipUrl, deletePage, readContent, removeClip, saveClip, unlockNotebook } from '../lib/notes'
 import { unlockedKeys } from '../lib/crypto'
 import { useAuth } from '../lib/auth'
 import { uid } from '../lib/id'
@@ -120,12 +119,12 @@ function useContainerWidth() {
   return [ref, w] as const
 }
 
+const GAP = 20
+
 function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   const nav = useNavigate()
   const { session } = useAuth()
   const [params, setParams] = useSearchParams()
-  const idx = Math.min(Math.max(0, Number(params.get('p') ?? 0)), Math.max(0, pages.length - 1))
-  const page = pages[idx]
   const [tools, setTools] = useState<ToolState>(() => {
     try {
       return { ...DEFAULT_TOOLS, ...JSON.parse(localStorage.getItem(TOOLS_KEY) ?? '{}'), tool: 'pen' }
@@ -134,147 +133,164 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
     }
   })
   useEffect(() => localStorage.setItem(TOOLS_KEY, JSON.stringify(tools)), [tools])
-  const [content, setContent] = useState<PageContent | null>(null)
-  const contentRef = useRef<PageContent | null>(null)
-  contentRef.current = content
-  const isLastPage = useRef(false)
-  isLastPage.current = idx === pages.length - 1
-  const pageIdx = useRef(idx)
-  pageIdx.current = idx
-  const autoPaging = useRef(false)
   const [hint, setHint] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [reading, setReading] = useState(false)
   const [panel, setPanel] = useState<null | 'stickers' | 'audio' | 'page' | 'pen' | 'translate'>(null)
   const [delPage, setDelPage] = useState(false)
-  const undo = useRef<PageContent[]>([])
-  const redo = useRef<PageContent[]>([])
-  const lastWrite = useRef(0)
-  const saveTimer = useRef<number | undefined>(undefined)
-  const pending = useRef<PageContent | null>(null)
   const [, force] = useState(0)
   const [wrapRef, wrapW] = useContainerWidth()
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const slots = useRef(new Map<string, HTMLDivElement>())
+  const handles = useRef(new Map<string, PageHandle>())
+  const pagesRef = useRef(pages)
+  pagesRef.current = pages
 
-  const flush = useCallback(async () => {
-    clearTimeout(saveTimer.current)
-    const c = pending.current
-    if (!c || !page) return
-    pending.current = null
-    lastWrite.current = Date.now() + 2000 // our own save echoing back is not a "remote" change
-    await writeContent(nb, page.id, c)
-  }, [nb, page])
+  const pageW = Math.max(240, Math.min(wrapW - 24, 900) * zoom)
+  const pageH = (pageW * PAGE_H) / PAGE_W
 
-  // switching pages: save the old one, reset history, always load the new one
-  useEffect(() => {
-    undo.current = []
-    redo.current = []
-    setSelected(null)
-    setContent(null)
-    lastWrite.current = 0
-    if (!page) return
-    let alive = true
-    void readContent(nb, page).then((c) => alive && setContent(c))
-    return () => {
-      alive = false
-      void flush()
-    }
-  }, [page?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* ---------- which page is in view, and which pages are mounted ---------- */
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [mounted, setMounted] = useState<Set<string>>(new Set())
+  const startIdx = Math.min(Math.max(0, Number(params.get('p') ?? 0)), Math.max(0, pages.length - 1))
+  const active = pages.find((p) => p.id === activeId) ?? pages[startIdx]
+  const idx = Math.max(0, pages.findIndex((p) => p.id === active?.id))
 
-  // same page changed on another device → reload it (unless we have unsaved edits)
-  useEffect(() => {
-    if (!page || !content) return
-    if (pending.current || page.updatedAt <= lastWrite.current) return
-    let alive = true
-    void readContent(nb, page).then((c) => alive && setContent(c))
-    return () => {
-      alive = false
-    }
-  }, [page?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const onHide = () => void flush()
-    window.addEventListener('pagehide', onHide)
-    document.addEventListener('visibilitychange', onHide)
-    return () => {
-      window.removeEventListener('pagehide', onHide)
-      document.removeEventListener('visibilitychange', onHide)
-    }
-  }, [flush])
-
-  const change = useCallback(
-    (c: PageContent, record = true) => {
-      setContent((prev) => {
-        if (record && prev) {
-          undo.current.push(prev)
-          if (undo.current.length > 60) undo.current.shift()
-          redo.current = []
-        }
-        return c
-      })
-      pending.current = c
-      clearTimeout(saveTimer.current)
-      saveTimer.current = window.setTimeout(() => void flush(), 600)
-      // the moment you start on the last page, the next blank page is created and waiting
-      if (record && isLastPage.current && !hasContent(contentRef.current) && hasContent(c) && !autoPaging.current) {
-        autoPaging.current = true
-        void addPage(nb, pageIdx.current)
-          .then(() => {
-            setHint('صفحة جديدة جاهزة بعدها ←')
-            setTimeout(() => setHint(null), 2200)
-          })
-          .catch(() => {})
-          .finally(() => (autoPaging.current = false))
+  const measure = useCallback(() => {
+    const sc = scrollRef.current
+    if (!sc) return
+    const view = sc.getBoundingClientRect()
+    const focusY = view.top + view.height * 0.35
+    let best: string | null = null
+    let bestDist = Infinity
+    const near = new Set<string>()
+    for (const p of pagesRef.current) {
+      const el = slots.current.get(p.id)
+      if (!el) continue
+      const r = el.getBoundingClientRect()
+      // keep pages within one screen above/below rendered; the rest are light placeholders
+      if (r.bottom > view.top - view.height && r.top < view.bottom + view.height) near.add(p.id)
+      const d = focusY < r.top ? r.top - focusY : focusY > r.bottom ? focusY - r.bottom : 0
+      if (d < bestDist) {
+        bestDist = d
+        best = p.id
       }
-    },
-    [flush, nb],
-  )
+    }
+    setActiveId((cur) => (cur === best ? cur : best))
+    setMounted((cur) => (cur.size === near.size && [...near].every((id) => cur.has(id)) ? cur : near))
+  }, [])
 
-  const doUndo = () => {
-    const prev = undo.current.pop()
-    if (!prev || !content) return
-    redo.current.push(content)
-    change(prev, false)
-    force((x) => x + 1)
+  useEffect(() => {
+    const sc = scrollRef.current
+    if (!sc) return
+    let raf = 0
+    const onScroll = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(measure)
+    }
+    sc.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      sc.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(raf)
+    }
+  }, [measure])
+  useEffect(() => measure(), [measure, pages.length, pageW])
+
+  const scrollToPage = useCallback((id: string, smooth = true) => {
+    const el = slots.current.get(id)
+    const sc = scrollRef.current
+    if (!el || !sc) return
+    sc.scrollTo({ top: el.offsetTop - 12, behavior: smooth ? 'smooth' : 'auto' })
+  }, [])
+
+  // open at ?p=… once
+  const opened = useRef(false)
+  useEffect(() => {
+    if (opened.current || !pages.length) return
+    opened.current = true
+    requestAnimationFrame(() => {
+      scrollToPage(pages[startIdx].id, false)
+      measure()
+    })
+  }, [pages, startIdx, scrollToPage, measure])
+
+  // remember the page in the URL (without adding history entries)
+  useEffect(() => {
+    if (!opened.current || !active) return
+    const t = setTimeout(() => setParams({ p: String(idx) }, { replace: true }), 400)
+    return () => clearTimeout(t)
+  }, [idx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ---------- page handles ---------- */
+  const register = useCallback((id: string, h: PageHandle | null) => {
+    if (h) handles.current.set(id, h)
+    else handles.current.delete(id)
+  }, [])
+  const onHistory = useCallback(() => force((x) => x + 1), [])
+  const activeHandle = () => (active ? handles.current.get(active.id) : undefined)
+  const flushAll = async () => {
+    await Promise.all([...handles.current.values()].map((h) => h.flush()))
   }
-  const doRedo = () => {
-    const next = redo.current.pop()
-    if (!next || !content) return
-    undo.current.push(content)
-    change(next, false)
-    force((x) => x + 1)
-  }
+
+  // writing on the last page creates the next blank page, ready below
+  const autoPaging = useRef(false)
+  const onFirstContent = useCallback(
+    (pageId: string) => {
+      const list = pagesRef.current
+      const i = list.findIndex((p) => p.id === pageId)
+      if (i !== list.length - 1 || autoPaging.current) return
+      autoPaging.current = true
+      void addPage(nb, i)
+        .then(() => {
+          setHint('صفحة جديدة جاهزة تحت ↓')
+          setTimeout(() => setHint(null), 2200)
+        })
+        .catch(() => {})
+        .finally(() => (autoPaging.current = false))
+    },
+    [nb],
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
-        if (e.shiftKey) doRedo()
-        else doUndo()
+        if (e.shiftKey) activeHandle()?.redo()
+        else activeHandle()?.undo()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const go = async (i: number) => {
-    await flush()
-    setParams({ p: String(i) }, { replace: true })
-  }
-  const newPage = async () => {
-    await flush()
-    await addPage(nb, idx)
-    setParams({ p: String(idx + 1) }, { replace: true })
+  /** y (in page units) of the top of what's visible on a page, for placing new things in view */
+  const visibleTopOf = (pageId: string) => {
+    const el = slots.current.get(pageId)
+    const sc = scrollRef.current
+    if (!el || !sc) return 0
+    const off = sc.getBoundingClientRect().top - el.getBoundingClientRect().top
+    return Math.max(0, Math.min(PAGE_H - 300, (off / pageH) * PAGE_H))
   }
 
-  const paper: PaperKind = page?.paper ?? nb.paper
-  const pageW = Math.max(240, Math.min(wrapW - 24, 900) * zoom)
+  const newPage = async () => {
+    await flushAll()
+    await addPage(nb, idx)
+    setTimeout(() => {
+      const next = pagesRef.current[idx + 1]
+      if (next) scrollToPage(next.id)
+    }, 250)
+  }
+
+  const paper: PaperKind = active?.paper ?? nb.paper
 
   const exportPng = async () => {
-    if (!content || !page) return
-    await flush()
-    const c = await renderPage(content, { scale: 2, paper, paperColor: nb.paperColor, page })
+    const h = activeHandle()
+    const content = h?.getContent()
+    if (!content || !active) return
+    await h!.flush()
+    const c = await renderPage(content, { scale: 2, paper, paperColor: nb.paperColor, page: active })
     const a = document.createElement('a')
     a.href = c.toDataURL('image/png')
     a.download = `${nb.title}-ص${idx + 1}.png`
@@ -287,7 +303,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   const imageInput = useRef<HTMLInputElement>(null)
 
   const exportPdf = async () => {
-    await flush()
+    await flushAll()
     setBusyMsg('عم نجهّز الـ PDF…')
     try {
       await exportNotebookPdf(nb, pages, (d, t) => setBusyMsg(`عم نجهّز الـ PDF… ${d}/${t}`))
@@ -298,18 +314,19 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
     }
   }
 
-  /** Places photos on the current page (centred in view, or where they were dropped). PDFs become pages. */
-  const addFiles = async (files: File[], at?: { x: number; y: number }) => {
+  /** Places photos on a page (in view, or where they were dropped). PDFs become pages. */
+  const addFiles = async (files: File[], at?: { x: number; y: number }, pageId?: string) => {
     if (!session) return
+    const target = pageId ?? active?.id
     const pdfs = files.filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name))
     const imgs = files.filter((f) => f.type.startsWith('image/'))
     if (!pdfs.length && !imgs.length) return setFileErr('بس صور أو ملفات PDF.')
     setFileErr(null)
     try {
-      if (imgs.length) {
+      if (imgs.length && target) {
         setBusyMsg(imgs.length > 1 ? `عم نضيف ${imgs.length} صور…` : 'عم نضيف الصورة…')
         const added = []
-        const viewTop = ((scroller.current?.scrollTop ?? 0) / pageW) * PAGE_W
+        const viewTop = visibleTopOf(target)
         for (const [i, f] of imgs.entries()) {
           const { fileId, ratio } = await storePageImage(f, nb.id, session.user.id)
           let w = 560
@@ -319,9 +336,10 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
           const cy = at ? at.y : Math.min(PAGE_H - h / 2 - 20, viewTop + 120 + h / 2)
           added.push({ id: uid(), fileId, ratio, w: r1(w), x: r1(cx - w / 2 + i * 30), y: r1(Math.max(10, cy - h / 2 + i * 30)), r: 0 })
         }
-        const cur = contentRef.current
-        if (cur) {
-          change({ ...cur, images: [...(cur.images ?? []), ...added] })
+        const h = handles.current.get(target)
+        const cur = h?.getContent()
+        if (h && cur) {
+          h.change({ ...cur, images: [...(cur.images ?? []), ...added] })
           setTools((t) => ({ ...t, tool: 'hand' }))
           setSelected(added[added.length - 1].id)
         }
@@ -350,14 +368,17 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
 
   const insert = async (file: File) => {
     if (!session) return
-    await flush()
+    await flushAll()
     setFileErr(null)
     setBusyMsg('عم نضيف الملف…')
     try {
       await insertFile(nb, file, idx, session.user.id)
-      setParams({ p: String(idx + 1) }, { replace: true })
       setPanel(null)
       setBusyMsg(null)
+      setTimeout(() => {
+        const next = pagesRef.current[idx + 1]
+        if (next) scrollToPage(next.id)
+      }, 300)
     } catch (e) {
       setBusyMsg(null)
       setFileErr((e as Error).message)
@@ -365,6 +386,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
   }
 
   const setTool = (patch: Partial<ToolState>) => setTools((t) => ({ ...t, ...patch }))
+  const activeContent = activeHandle()?.getContent() ?? null
 
   if (reading) return <ReadingView nb={nb} pages={pages} onClose={() => setReading(false)} start={idx} />
 
@@ -372,7 +394,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
     <div className="flex h-dvh flex-col bg-[#EEF0EC]">
       {/* top bar */}
       <header className="pt-safe z-30 flex items-center gap-2 border-b border-line bg-paper/95 px-2 pb-2 backdrop-blur">
-        <IconButton label="رجوع" onClick={async () => { await flush(); nav('/notes') }}>
+        <IconButton label="رجوع" onClick={async () => { await flushAll(); nav('/notes') }}>
           <ArrowRight size={20} />
         </IconButton>
         <div className="min-w-0 flex-1">
@@ -385,7 +407,7 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
         <IconButton label="تسجيل صوتي" active={panel === 'audio'} onClick={() => setPanel(panel === 'audio' ? null : 'audio')}>
           <Mic size={19} />
         </IconButton>
-        <IconButton label="وضع القراءة" onClick={async () => { await flush(); setReading(true) }}>
+        <IconButton label="وضع القراءة" onClick={async () => { await flushAll(); setReading(true) }}>
           <BookOpenText size={19} />
         </IconButton>
         <IconButton label="إعدادات الصفحة" active={panel === 'page'} onClick={() => setPanel(panel === 'page' ? null : 'page')}>
@@ -411,8 +433,8 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
           <IconButton label="مثبّت الكتابة" active={tools.stabilizer > 0.05} onClick={() => setPanel(panel === 'pen' ? null : 'pen')}><Waves size={19} /></IconButton>
           <IconButton label={tools.asmr ? 'صوت الكتابة شغّال' : 'صوت الكتابة'} active={tools.asmr} onClick={() => setTool({ asmr: !tools.asmr })}>{tools.asmr ? <Volume2 size={19} /> : <VolumeX size={19} />}</IconButton>
           <Divider />
-          <IconButton label="تراجع" onClick={doUndo} disabled={!undo.current.length}><Undo2 size={19} /></IconButton>
-          <IconButton label="إعادة" onClick={doRedo} disabled={!redo.current.length}><Redo2 size={19} /></IconButton>
+          <IconButton label="تراجع" onClick={() => activeHandle()?.undo()} disabled={!activeHandle()?.canUndo()}><Undo2 size={19} /></IconButton>
+          <IconButton label="إعادة" onClick={() => activeHandle()?.redo()} disabled={!activeHandle()?.canRedo()}><Redo2 size={19} /></IconButton>
         </div>
         <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto px-3 pb-2">
           {INK_COLORS.map((c) => (
@@ -442,11 +464,12 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
                       title={STICKERS[k].label}
                       aria-label={`ملصق ${STICKERS[k].label}`}
                       onClick={() => {
-                        if (!content) return
-                        const scrollTop = scroller.current?.scrollTop ?? 0
-                        const y = Math.min(PAGE_H - 200, ((scrollTop + 120) / pageW) * PAGE_W)
+                        const h = activeHandle()
+                        const content = h?.getContent()
+                        if (!h || !content || !active) return
+                        const y = Math.min(PAGE_H - 200, visibleTopOf(active.id) + 120)
                         const st = { id: uid(), kind: k, x: 380 + Math.random() * 120, y: Math.max(40, y), s: 1, r: 0 }
-                        change({ ...content, stickers: [...content.stickers, st] })
+                        h.change({ ...content, stickers: [...content.stickers, st] })
                         setTool({ tool: 'hand' })
                         setSelected(st.id)
                       }}
@@ -457,12 +480,15 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
                   ))}
                 </div>
               )}
-              {panel === 'translate' && content && (
+              {panel === 'translate' && (
                 <TranslatePanel
-                  initial={content.texts.find((t) => t.id === selected)?.text ?? ''}
+                  initial={activeContent?.texts.find((t) => t.id === selected)?.text ?? ''}
                   onInsert={(text) => {
-                    const box = { id: uid(), x: 120, y: Math.max(40, ((scroller.current?.scrollTop ?? 0) / pageW) * PAGE_W + 120), w: 560, text, size: 30, color: tools.color }
-                    change({ ...content, texts: [...content.texts, box] })
+                    const h = activeHandle()
+                    const content = h?.getContent()
+                    if (!h || !content || !active) return
+                    const box = { id: uid(), x: 120, y: Math.max(40, visibleTopOf(active.id) + 120), w: 560, text, size: 30, color: tools.color }
+                    h.change({ ...content, texts: [...content.texts, box] })
                     setSelected(box.id)
                   }}
                 />
@@ -480,16 +506,17 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
                     <input type="checkbox" className="size-5 accent-[#6F9876]" checked={tools.pencilOnly} onChange={(e) => setTool({ pencilOnly: e.target.checked })} />
                     <span>
                       <span className="block font-semibold">قلم ستايلس بس</span>
-                      <span className="text-xs text-ink-soft">الإصبع ما بيكتب (منع لمس الكف)</span>
+                      <span className="text-xs text-ink-soft">الإصبع بيمرّر الصفحات وما بيكتب</span>
                     </span>
                   </label>
                 </div>
               )}
-              {panel === 'page' && page && (
+              {panel === 'page' && active && (
                 <div className="space-y-3 p-3">
+                  <p className="text-xs text-ink-soft">إعدادات الصفحة <span className="num">{idx + 1}</span></p>
                   <div className="flex flex-wrap gap-2">
                     {PAPERS.map((p) => (
-                      <button key={p.kind} onClick={() => db.pages.update(page.id, { paper: p.kind })} aria-pressed={paper === p.kind} className={`min-h-9 rounded-full px-3 text-sm font-semibold ring-1 ${paper === p.kind ? 'bg-ink text-white ring-ink' : 'bg-white ring-line'}`}>
+                      <button key={p.kind} onClick={() => db.pages.update(active.id, { paper: p.kind })} aria-pressed={paper === p.kind} className={`min-h-9 rounded-full px-3 text-sm font-semibold ring-1 ${paper === p.kind ? 'bg-ink text-white ring-ink' : 'bg-white ring-line'}`}>
                         {p.label}
                       </button>
                     ))}
@@ -511,16 +538,54 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
         </AnimatePresence>
       </div>
 
-      {panel === 'audio' && page && session && <AudioPanel nb={nb} pageId={page.id} userId={session.user.id} onClose={() => setPanel(null)} />}
+      {panel === 'audio' && active && session && <AudioPanel nb={nb} pageId={active.id} userId={session.user.id} onClose={() => setPanel(null)} />}
 
-      {/* page */}
-      <div ref={(el) => { wrapRef.current = el; scroller.current = el }} className="relative flex-1 overflow-auto" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
-        <div className="flex min-h-full justify-center px-3 py-5" style={{ minWidth: pageW + 24 }}>
-          {content && page ? (
-            <PageCanvas content={content} paper={paper} paperColor={nb.paperColor} bg={page.bg} width={pageW} tools={tools} onChange={change} selected={selected} onSelect={setSelected} onDropFiles={(files, at) => void addFiles(files, at)} />
-          ) : (
-            <div className="animate-pulse rounded-md bg-white" style={{ width: pageW, height: (pageW * PAGE_H) / PAGE_W }} />
-          )}
+      {/* all pages, one under the other */}
+      <div
+        ref={(el) => {
+          wrapRef.current = el
+          scrollRef.current = el
+        }}
+        data-scroller
+        className="relative flex-1 overflow-auto overscroll-contain"
+        onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}
+      >
+        <div className="flex flex-col items-center px-3 py-5" style={{ minWidth: pageW + 24, gap: GAP }} onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
+          {pages.map((p, i) => (
+            <div
+              key={p.id}
+              ref={(el) => {
+                if (el) slots.current.set(p.id, el)
+                else slots.current.delete(p.id)
+              }}
+              className="relative shrink-0"
+              style={{ width: pageW, height: pageH }}
+            >
+              {mounted.has(p.id) ? (
+                <PageEditor
+                  nb={nb}
+                  page={p}
+                  width={pageW}
+                  tools={tools}
+                  selected={selected}
+                  onSelect={setSelected}
+                  register={register}
+                  onHistory={onHistory}
+                  onFirstContent={onFirstContent}
+                  onDropFiles={(files, at, pageId) => void addFiles(files, at, pageId)}
+                />
+              ) : (
+                <div className="size-full rounded-md bg-white/70 ring-1 ring-black/5" />
+              )}
+              <span className="num pointer-events-none absolute -bottom-[18px] left-1/2 -translate-x-1/2 text-[0.7rem] text-ink-faint">{i + 1}</span>
+            </div>
+          ))}
+          <button
+            onClick={newPage}
+            className="btn-press mb-6 flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-sage-deep shadow ring-1 ring-line"
+          >
+            <FilePlus2 size={18} /> صفحة جديدة
+          </button>
         </div>
       </div>
 
@@ -561,17 +626,15 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
         </div>
       )}
 
-      {/* page nav */}
+      {/* quick page jump */}
       <footer className="z-20 flex items-center gap-1 border-t border-line bg-paper/95 px-2 pt-1.5 backdrop-blur" style={{ paddingBottom: 'max(var(--safe-bottom), 8px)' }}>
-        <IconButton label="الصفحة السابقة" onClick={() => go(idx - 1)} disabled={idx === 0}><ChevronRight size={20} /></IconButton>
         <div className="no-scrollbar flex flex-1 justify-center gap-1 overflow-x-auto">
           {pages.map((p, i) => (
-            <button key={p.id} onClick={() => go(i)} aria-label={`صفحة ${i + 1}`} aria-current={i === idx} className={`num grid h-9 min-w-9 shrink-0 place-items-center rounded-lg px-2 text-sm font-semibold ${i === idx ? 'bg-ink text-white' : 'bg-white ring-1 ring-line'}`}>
+            <button key={p.id} onClick={() => scrollToPage(p.id)} aria-label={`صفحة ${i + 1}`} aria-current={i === idx} className={`num grid h-9 min-w-9 shrink-0 place-items-center rounded-lg px-2 text-sm font-semibold ${i === idx ? 'bg-ink text-white' : 'bg-white ring-1 ring-line'}`}>
               {i + 1}
             </button>
           ))}
         </div>
-        <IconButton label="الصفحة التالية" onClick={() => go(idx + 1)} disabled={idx >= pages.length - 1}><ChevronLeft size={20} /></IconButton>
         <IconButton label="صفحة جديدة" onClick={newPage}><FilePlus2 size={20} /></IconButton>
         <IconButton label="تصغير" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}><ZoomOut size={19} /></IconButton>
         <IconButton label="تكبير" onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}><ZoomIn size={19} /></IconButton>
@@ -579,23 +642,20 @@ function Editor({ nb, pages }: { nb: Notebook; pages: NotePage[] }) {
 
       <Confirm
         open={delPage}
-        title="نحذف الصفحة؟"
+        title={`نحذف الصفحة ${idx + 1}؟`}
         message="الصفحة وكل اللي عليها والتسجيلات المربوطة فيها رح ينحذفوا."
         confirmLabel="احذفها"
         onCancel={() => setDelPage(false)}
         onConfirm={async () => {
           setDelPage(false)
           setPanel(null)
-          pending.current = null
-          if (page) await deletePage(nb, page.id)
-          setParams({ p: String(Math.max(0, idx - 1)) }, { replace: true })
+          if (active) await deletePage(nb, active.id)
         }}
       />
     </div>
   )
 }
 
-const scroller: { current: HTMLDivElement | null } = { current: null }
 
 function IconButton({ label, onClick, active, disabled, children }: { label: string; onClick: () => void; active?: boolean; disabled?: boolean; children: ReactNode }) {
   return (
@@ -799,8 +859,4 @@ function TranslatePanel({ initial, onInsert }: { initial: string; onInsert: (t: 
       )}
     </div>
   )
-}
-
-function hasContent(c: PageContent | null | undefined) {
-  return !!c && c.strokes.length + c.texts.filter((t) => t.text.trim()).length + c.stickers.length + (c.images?.length ?? 0) > 0
 }
