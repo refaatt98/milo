@@ -260,17 +260,33 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
 
   const move = (e: RPointerEvent<HTMLCanvasElement>) => {
     if (erasing.current && e.pointerId === erasing.current.id) {
+      if (e.pointerType === 'pen' && e.buttons === 0) return finishStroke(e)
       const [x, y] = toPage(e)
       eraseAt(x, y)
       return
     }
     const d = drawing.current
     if (!d || e.pointerId !== d.id || !tools) return
+    // the pen is no longer touching (lift-off we didn't hear about, or Pencil hover): stop inking
+    if (e.pointerType === 'pen' && e.buttons === 0) return finishStroke(e)
     // coalesced events give smoother lines at high pen rates; never let an empty list drop movement
     const co = e.nativeEvent.getCoalescedEvents?.()
     const events = (co && co.length ? co : [e.nativeEvent]) as PointerEvent[]
     for (const ev of events) {
+      // ink only while the pen actually presses the paper — never from hover samples in the air
+      if (ev.pointerType === 'pen' && (ev.buttons === 0 || ev.pressure === 0)) continue
       const [rx, ry] = toPage(ev)
+      // ink only on the sheet: leaving the page ends the stroke at its edge
+      if (rx < 0 || ry < 0 || rx > PAGE_W || ry > PAGE_H) {
+        const cx = Math.max(0, Math.min(PAGE_W, rx))
+        const cy = Math.max(0, Math.min(PAGE_H, ry))
+        if (!tools.ruler) d.stroke.pts.push(r1(cx), r1(cy), d.stroke.pts[d.stroke.pts.length - 1])
+        drawing.current = null
+        asmrStop()
+        renderLive()
+        commit({ ...content, strokes: [...content.strokes, d.stroke] })
+        return
+      }
       if (tools.ruler) {
         const [sx, sy] = snapLine(d.start[0], d.start[1], rx, ry)
         d.stroke.pts = [d.stroke.pts[0], d.stroke.pts[1], d.stroke.pts[2], r1(sx), r1(sy), d.stroke.pts[2]]
@@ -281,7 +297,7 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
       const lx = pts[pts.length - 3]
       const ly = pts[pts.length - 2]
       if ((x - lx) ** 2 + (y - ly) ** 2 < 0.8) continue
-      const pr = ev.pointerType === 'pen' ? ev.pressure || 0.5 : 0.5
+      const pr = ev.pointerType === 'pen' ? ev.pressure : 0.5
       pts.push(r1(x), r1(y), Math.round(pr * 100) / 100)
       if (tools.asmr) {
         const now = performance.now()
@@ -293,7 +309,7 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
     renderLive()
   }
 
-  const up = (e: RPointerEvent<HTMLCanvasElement>) => {
+  const finishStroke = (e: RPointerEvent<HTMLCanvasElement>) => {
     if (erasing.current && e.pointerId === erasing.current.id) {
       const removed = erasing.current.removed
       erasing.current = null
@@ -307,7 +323,8 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
     if (!tools?.ruler && e.type === 'pointerup') {
       const [x, y] = toPage(e)
       const pts = d.stroke.pts
-      if ((x - pts[pts.length - 3]) ** 2 + (y - pts[pts.length - 2]) ** 2 > 0.8) pts.push(r1(x), r1(y), pts[pts.length - 1])
+      const inside = x >= 0 && y >= 0 && x <= PAGE_W && y <= PAGE_H
+      if (inside && (x - pts[pts.length - 3]) ** 2 + (y - pts[pts.length - 2]) ** 2 > 0.8) pts.push(r1(x), r1(y), pts[pts.length - 1])
     }
     drawing.current = null
     asmrStop()
@@ -457,8 +474,8 @@ export function PageCanvas({ content, paper, paperColor, bg, width, tools, readO
         style={{ touchAction: canvasActive ? (fingersDraw ? 'none' : 'pan-x pan-y') : 'auto', pointerEvents: canvasActive ? 'auto' : 'none', cursor: tools?.tool === 'eraser' ? 'cell' : tools?.tool === 'text' ? 'text' : 'crosshair' }}
         onPointerDown={down}
         onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={up}
+        onPointerUp={finishStroke}
+        onPointerCancel={finishStroke}
         aria-label={readOnly ? 'صفحة' : 'مساحة الكتابة'}
       />
       {content.texts.map((t) => {
